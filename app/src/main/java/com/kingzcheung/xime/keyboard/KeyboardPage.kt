@@ -36,4 +36,5 @@ sealed interface OverlayRoute {
     data object Emoji : OverlayRoute
     data object CandidatePage : OverlayRoute
     data object Edit : OverlayRoute
+    data object PermissionManager : OverlayRoute
 }

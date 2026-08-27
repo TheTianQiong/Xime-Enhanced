@@ -28,6 +28,7 @@ import androidx.compose.material.icons.twotone.Padding
 import androidx.compose.material.icons.twotone.PictureInPicture
 import androidx.compose.material.icons.twotone.Quickreply
 import androidx.compose.material.icons.twotone.Rotate90DegreesCcw
+import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.SettingsOverscan
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ data class MenuBarCallbacks(
     val onToggleDarkMode: () -> Unit,
     val onFloatingModeToggle: (() -> Unit)? = null,
     val onToolbarCustomize: () -> Unit = {},
+    val onPermissionManager: () -> Unit = {},
     val onToggleSchemaSwitch: ((SchemaSwitchUiState) -> Unit)? = null,
 )
 
@@ -114,6 +116,7 @@ fun MenuBar(
     val customizeIcon = rememberVectorPainter(Icons.TwoTone.Padding)
     val schemaIcon = rememberVectorPainter(Icons.TwoTone.Keyboard)
     val settingsIcon = rememberVectorPainter(Icons.TwoTone.Settings)
+    val permissionIcon = rememberVectorPainter(Icons.TwoTone.Security)
 
     val darkModeLabel = when (state.darkMode) {
         0 -> "深色模式"
@@ -141,6 +144,7 @@ fun MenuBar(
             MenuItem(emojiIcon, "表情", callbacks.onEmoji),
         ) + switchItems + listOf(
             MenuItem(customizeIcon, "定制工具栏", callbacks.onToolbarCustomize),
+            MenuItem(permissionIcon, "管理权限", callbacks.onPermissionManager),
             // 悬浮模式下键盘内容为缩放的浮动卡片，高度不可调节，隐藏该入口
             if (!state.isFloatingMode) MenuItem(keyboardResizeIcon, "键盘调节", callbacks.onKeyboardResize) else null,
             MenuItem(darkModeIcon, darkModeLabel, callbacks.onToggleDarkMode),

@@ -618,4 +618,28 @@ object SettingsPreferences {
     fun setClipboardSyncPluginId(context: Context, pluginId: String) {
         getPrefs(context).edit().putString(KEY_CLIPBOARD_SYNC_PLUGIN_ID, pluginId).apply()
     }
+
+    // ── 短信验证码 ──
+    // 默认关闭（隐私考虑）；需先在「管理权限」授予 RECEIVE_SMS 才会收到短信。
+
+    const val KEY_SMS_CODE_ENABLED = "sms_code_enabled"
+    const val KEY_SMS_AUTO_COPY = "sms_auto_copy"
+
+    /** 短信验证码功能总开关（默认关闭）。 */
+    fun isSmsCodeEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_SMS_CODE_ENABLED, false)
+    }
+
+    fun setSmsCodeEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SMS_CODE_ENABLED, enabled).apply()
+    }
+
+    /** 收到验证码后是否自动复制到剪贴板（默认关闭）。 */
+    fun isSmsAutoCopyEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_SMS_AUTO_COPY, false)
+    }
+
+    fun setSmsAutoCopyEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SMS_AUTO_COPY, enabled).apply()
+    }
 }

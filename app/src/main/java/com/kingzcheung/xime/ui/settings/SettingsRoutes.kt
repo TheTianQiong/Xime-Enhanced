@@ -26,4 +26,5 @@ object SettingsRoutes {
     const val ClipboardSync = "clipboard_sync"
     const val SchemaDictBrowser = "schema_dict_browser"
     const val RimeFileBrowser = "rime_file_browser"
+    const val PermissionManager = "permission_manager"
 }

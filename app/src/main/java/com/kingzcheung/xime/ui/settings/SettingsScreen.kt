@@ -37,7 +37,8 @@ fun SettingsScreen(
                 onNavigateToSpeechToText = { navController.navigate(SettingsRoutes.SpeechToText) },
                 onNavigateToAbout = { navController.navigate(SettingsRoutes.About) },
                 onNavigateToWebDav = { navController.navigate(SettingsRoutes.WebDav) },
-                onNavigateToClipboardSync = { navController.navigate(SettingsRoutes.ClipboardSync) }
+                onNavigateToClipboardSync = { navController.navigate(SettingsRoutes.ClipboardSync) },
+                onNavigateToPermissionManager = { navController.navigate(SettingsRoutes.PermissionManager) }
             )
         }
         composable(SettingsRoutes.Schema) {
@@ -232,6 +233,11 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.Licenses) {
             LicensesContent(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(SettingsRoutes.PermissionManager) {
+            PermissionManagerScreen(
                 onBack = { navController.popBackStack() }
             )
         }

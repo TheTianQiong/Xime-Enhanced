@@ -32,6 +32,7 @@ import androidx.compose.material.icons.twotone.Info
 import androidx.compose.material.icons.twotone.Keyboard
 import androidx.compose.material.icons.twotone.KeyboardAlt
 import androidx.compose.material.icons.twotone.Palette
+import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.Storefront
 import androidx.compose.material.icons.twotone.Straighten
 import androidx.compose.material.icons.twotone.Sync
@@ -80,7 +81,8 @@ fun SettingsMainContent(
     onNavigateToSpeechToText: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToWebDav: () -> Unit = {},
-    onNavigateToClipboardSync: () -> Unit = {}
+    onNavigateToClipboardSync: () -> Unit = {},
+    onNavigateToPermissionManager: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -294,6 +296,18 @@ fun SettingsMainContent(
                         title = "模型管理",
                         subtitle = "管理本地下载的智能模型",
                         onClick = onNavigateToModelLocal,
+                        showArrow = true
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    SettingsItem(
+                        icon = Icons.TwoTone.Security,
+                        title = "管理权限",
+                        subtitle = "管理短信、麦克风等权限与短信验证码功能",
+                        onClick = onNavigateToPermissionManager,
                         showArrow = true
                     )
                 })

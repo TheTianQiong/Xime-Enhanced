@@ -56,7 +56,9 @@ import com.kingzcheung.xime.rime.T9InputController
 import com.kingzcheung.xime.service.CandidateState
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SettingsPreferences
+import com.kingzcheung.xime.sms.SmsCodeStore
 import com.kingzcheung.xime.ui.menubar.ClipboardView
+import com.kingzcheung.xime.ui.menubar.PermissionManagerView
 import com.kingzcheung.xime.ui.menubar.SchemaListView
 import com.kingzcheung.xime.ui.menubar.ToolbarCustomizeView
 import com.kingzcheung.xime.ui.theme.KeyboardThemes
@@ -287,6 +289,28 @@ fun KeyboardView(
                     },
                     onFocusChange = { focused: Boolean ->
                         callbacks.onQuickSendFormFocusChange?.invoke(focused)
+                    },
+                )
+            }
+
+            // ── 短信验证码快捷插入（需授予短信权限并开启「短信验证码获取」）──
+            val smsContext = LocalContext.current
+            LaunchedEffect(Unit) { SmsCodeStore.init(smsContext) }
+            val smsCodes by SmsCodeStore.codes.collectAsStateWithLifecycle()
+            val smsFeatureEnabled = SettingsPreferences.isSmsCodeEnabled(smsContext)
+            val latestSmsCode = if (smsFeatureEnabled) smsCodes.firstOrNull() else null
+            if (latestSmsCode != null) {
+                SmsCodeQuickBar(
+                    code = latestSmsCode.code,
+                    textColor = candidateTextColor,
+                    accentColor = accentColor,
+                    backgroundColor = keyBgColor.copy(alpha = 0.55f),
+                    onInsert = {
+                        callbacks.onCommitText?.invoke(latestSmsCode.code)
+                        SmsCodeStore.consume(smsContext, latestSmsCode.code)
+                    },
+                    onDismiss = {
+                        SmsCodeStore.consume(smsContext, latestSmsCode.code)
                     },
                 )
             }
@@ -880,6 +904,7 @@ fun KeyboardView(
                             onSchemaList = { viewModel.pushOverlay(OverlayRoute.SchemaList) },
                             onToggleDarkMode = { callbacks.onToggleDarkMode?.invoke() },
                             onToolbarCustomize = { viewModel.showOverlay(OverlayRoute.ToolbarCustomize) },
+                            onPermissionManager = { viewModel.showOverlay(OverlayRoute.PermissionManager) },
                             onFloatingModeToggle = { callbacks.onFloatingModeChange?.invoke(!state.isFloatingMode); viewModel.closeOverlay() },
                             onToggleSchemaSwitch = { sw -> callbacks.onToggleSchemaSwitch?.invoke(sw); viewModel.closeOverlay() },
                         ),
@@ -935,6 +960,15 @@ fun KeyboardView(
                         keyBgColor = keyBgColor,
                         onUpdateToolbarButtons = callbacks.onUpdateToolbarButtons,
                         onDismiss = { viewModel.closeOverlay() },
+                        bottomPaddingDp = state.keyboardBottomPaddingDp,
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight()
+                    )
+                    is OverlayRoute.PermissionManager -> PermissionManagerView(
+                        backgroundColor = keyboardBgColor,
+                        keyTextColor = keyTextColor,
+                        accentColor = accentColor,
+                        keyBgColor = keyBgColor,
+                        onBack = { viewModel.closeOverlay() },
                         bottomPaddingDp = state.keyboardBottomPaddingDp,
                         modifier = Modifier.fillMaxWidth().fillMaxHeight()
                     )
