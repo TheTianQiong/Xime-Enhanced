@@ -5,10 +5,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    
+
+    <!-- Android 11+ 包可见性：声明需要绑定的外部服务（说点啥/asr-keyboard） -->
+    <queries>
+        <package android:name="com.brycewg.asrkb.pro" />
+        <package android:name="com.brycewg.asrkb" />
+    </queries>
+
     <application
         android:name=".XimeApplication"
         android:allowBackup="true"
@@ -75,7 +82,17 @@
             android:name=".service.AsrInferenceService"
             android:exported="false"
             android:process=":asr" />
-        
+
+        <!-- 短信验证码接收器：仅接收系统广播，需授予 RECEIVE_SMS 权限后才生效 -->
+        <receiver
+            android:name=".service.SmsCodeReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

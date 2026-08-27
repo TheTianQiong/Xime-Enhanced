@@ -50,6 +50,13 @@ object PluginManager {
     @Volatile
     var cryptoHostApiFactory: (() -> com.kingzcheung.xime.plugin.core.lua.crypto.CryptoHostApi)? = null
 
+    /**
+     * 宿主通用 AIDL/Binder 桥 API 提供者（app 层注入，外部语音服务联动等插件使用）。
+     * 工厂参数为插件 id，宿主据此按插件独立创建绑定实例。
+     */
+    @Volatile
+    var ipcHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi)? = null
+
     private var frameworkContext: PluginFrameworkContext? = null
     private val _loadedPluginsFlow = MutableStateFlow<Map<String, LoadedPluginInfo>>(emptyMap())
     private val _pluginInstancesFlow = MutableStateFlow<Map<String, IPluginEntryClass>>(emptyMap())

@@ -37,7 +37,8 @@ class LuaScriptRuntime(
     private val hostApi: LuaHostApi? = null,
     private val wsHostApi: com.kingzcheung.xime.plugin.core.lua.ws.WsHostApi? = null,
     private val httpHostApi: com.kingzcheung.xime.plugin.core.lua.http.HttpHostApi? = null,
-    private val cryptoHostApi: com.kingzcheung.xime.plugin.core.lua.crypto.CryptoHostApi? = null
+    private val cryptoHostApi: com.kingzcheung.xime.plugin.core.lua.crypto.CryptoHostApi? = null,
+    private val ipcHostApi: com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi? = null
 ) {
 
     companion object {
@@ -154,6 +155,34 @@ class LuaScriptRuntime(
         override fun onBinary(data: ByteArray) { wsCallbacks?.get("onBinary")?.invoke(LuaString.valueOf(data)) }
         override fun onError(message: String) { wsCallbacks?.get("onError")?.invoke(LuaValue.valueOf(message)) }
         override fun onClose() { wsCallbacks?.get("onClose")?.invoke() }
+    }
+
+    /** Lua 侧注册的 IPC（AIDL 桥）事件回调（host.ipc.connect 的 callbacks 表）。 */
+    @Volatile
+    private var ipcCallbacks: Map<String, LuaValue>? = null
+
+    private val ipcListener = object : com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostListener {
+        override fun onState(sessionId: Int, state: Int, message: String) {
+            ipcCallbacks?.get("onState")?.invoke(
+                LuaValue.valueOf(sessionId), LuaValue.valueOf(state), LuaValue.valueOf(message)
+            )
+        }
+        override fun onPartial(sessionId: Int, text: String) {
+            ipcCallbacks?.get("onPartial")?.invoke(LuaValue.valueOf(sessionId), LuaValue.valueOf(text))
+        }
+        override fun onFinal(sessionId: Int, text: String) {
+            ipcCallbacks?.get("onFinal")?.invoke(LuaValue.valueOf(sessionId), LuaValue.valueOf(text))
+        }
+        override fun onError(sessionId: Int, code: Int, message: String) {
+            ipcCallbacks?.get("onError")?.invoke(
+                LuaValue.valueOf(sessionId), LuaValue.valueOf(code), LuaValue.valueOf(message)
+            )
+        }
+        override fun onAmplitude(sessionId: Int, amplitude: Float) {
+            ipcCallbacks?.get("onAmplitude")?.invoke(
+                LuaValue.valueOf(sessionId), LuaValue.valueOf(amplitude.toDouble())
+            )
+        }
     }
 
     private fun buildSandbox(): Globals {
@@ -320,6 +349,11 @@ class LuaScriptRuntime(
             host.set("crypto", buildCryptoTable())
         }
 
+        // 通用 AIDL/Binder 桥 API（外部语音服务联动，见 IpcHostApi）
+        if (ipcHostApi != null) {
+            host.set("ipc", buildIpcTable())
+        }
+
         // ASR 结果回传桥：插件 Lua 解析结果后通知宿主后端（协议无关的接口桥）
         host.set("asr", buildAsrEmitTable())
 
@@ -429,6 +463,71 @@ class LuaScriptRuntime(
             CoerceJavaToLua.coerce(cryptoHostApi?.utcTime(args.arg1().tojstring()))
         })
         return crypto
+    }
+
+    private fun buildIpcTable(): LuaTable {
+        val ipc = LuaTable()
+
+        // 绑定说点啥外部语音服务并注册事件回调（callbacks: {onState,onPartial,onFinal,onError,onAmplitude}）
+        ipc.set("connect", luaFunction { args ->
+            val callbacks = args.arg1()
+            if (callbacks.istable()) {
+                val map = HashMap<String, LuaValue>()
+                for (name in listOf("onState", "onPartial", "onFinal", "onError", "onAmplitude")) {
+                    val fn = callbacks.get(name)
+                    if (fn.isfunction()) map[name] = fn
+                }
+                ipcCallbacks = map
+            }
+            CoerceJavaToLua.coerce(ipcHostApi?.connect(ipcListener) ?: false)
+        })
+
+        // 阻塞等待绑定并启动推送 PCM 会话；返回 sessionId(>0) 或错误码（-2/-3/-5/-100~-102）
+        ipc.set("startPcmSession", luaFunction { _ ->
+            CoerceJavaToLua.coerce(ipcHostApi?.startPcmSession() ?: 0)
+        })
+
+        // 推送一帧 PCM（二进制 LuaString 或 ByteArray userdata → ByteArray）
+        ipc.set("writePcm", luaFunction { args ->
+            val sid = args.arg1().toint()
+            val pcm = luaToBytes(args.arg(2))
+            val rate = args.arg(3).toint()
+            val ch = args.arg(4).toint()
+            if (pcm != null) ipcHostApi?.writePcm(sid, pcm, rate, ch)
+            LuaValue.NIL
+        })
+
+        ipc.set("finishPcm", luaFunction { args ->
+            ipcHostApi?.finishPcm(args.arg1().toint())
+            LuaValue.NIL
+        })
+        ipc.set("cancelSession", luaFunction { args ->
+            ipcHostApi?.cancelSession(args.arg1().toint())
+            LuaValue.NIL
+        })
+        ipc.set("isRecording", luaFunction { args ->
+            CoerceJavaToLua.coerce(ipcHostApi?.isRecording(args.arg1().toint()) ?: false)
+        })
+        ipc.set("isAnyRecording", luaFunction { _ ->
+            CoerceJavaToLua.coerce(ipcHostApi?.isAnyRecording() ?: false)
+        })
+        ipc.set("getVersion", luaFunction { _ ->
+            CoerceJavaToLua.coerce(ipcHostApi?.getVersion())
+        })
+        ipc.set("getState", luaFunction { _ ->
+            LuaValue.valueOf(ipcHostApi?.getState() ?: 0)
+        })
+        ipc.set("lastError", luaFunction { _ ->
+            CoerceJavaToLua.coerce(ipcHostApi?.lastError())
+        })
+
+        // 解绑并清理（插件 onUnload 时调用）
+        ipc.set("close", luaFunction { _ ->
+            ipcHostApi?.close()
+            LuaValue.NIL
+        })
+
+        return ipc
     }
 
     private fun buildAsrEmitTable(): LuaTable {
