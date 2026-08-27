@@ -26,6 +26,10 @@ This is **Xime-Enhanced**, an enhanced fork of Xime with the following additions
 
 > **Privacy**: SMS content is parsed only on-device and is never uploaded. Granting the SMS permission is opt-in and can be revoked anytime via **管理权限**.
 
+## Changelog (Enhanced)
+
+- `2.7.2-enhanced` — Initial enhanced release: AIDL voice input (bibi/说点啥) via `host.ipc` bridge + `asrkb-bridge` plugin; SMS verification-code quick-insert & auto-copy; "Manage permissions" entry in both the IME menu and Settings.
+
 ---
 
 > This input method supports both Wubi (五笔) and Pinyin input. The author primarily uses Wubi with Pinyin as a fallback, so resources lean toward Wubi.
