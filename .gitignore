@@ -20,6 +20,9 @@ signing-key-base64.txt
 *.keystore
 node_modules
 *.jks
+*.p12
+*.pfx
+keystore.properties
 keystore-base64.txt
 PROGRESS.md
 DECISIONS.md
