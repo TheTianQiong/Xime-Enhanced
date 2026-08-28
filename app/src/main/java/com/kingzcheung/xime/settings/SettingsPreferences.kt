@@ -631,6 +631,44 @@ object SettingsPreferences {
         getPrefs(context).edit().putBoolean(KEY_SHUANGPIN_HINT_ENABLED, enabled).apply()
     }
 
+    // ── 拓展商店设置 ──
+
+    private const val KEY_STORE_REPO_PRESET = "store_repo_preset"
+    private const val KEY_STORE_REPO_URL = "store_repo_url"
+    private const val KEY_GITHUB_ACCEL = "github_accel"
+
+    const val STORE_REPO_OFFICIAL = "official"
+    const val STORE_REPO_CUSTOM = "custom"
+    const val DEFAULT_STORE_REPO_URL = "https://index.ximei.me/"
+
+    fun getStoreRepoPreset(context: Context): String {
+        return getPrefs(context).getString(KEY_STORE_REPO_PRESET, STORE_REPO_OFFICIAL) ?: STORE_REPO_OFFICIAL
+    }
+
+    fun setStoreRepoPreset(context: Context, preset: String) {
+        getPrefs(context).edit().putString(KEY_STORE_REPO_PRESET, preset).apply()
+    }
+
+    fun isStoreRepoCustom(context: Context): Boolean = getStoreRepoPreset(context) == STORE_REPO_CUSTOM
+
+    /** 商店索引地址：官方默认 index.ximei.me，可切换自定义仓库。 */
+    fun getStoreRepoUrl(context: Context): String {
+        return getPrefs(context).getString(KEY_STORE_REPO_URL, DEFAULT_STORE_REPO_URL) ?: DEFAULT_STORE_REPO_URL
+    }
+
+    fun setStoreRepoUrl(context: Context, url: String) {
+        getPrefs(context).edit().putString(KEY_STORE_REPO_URL, url.trim()).apply()
+    }
+
+    /** GitHub 加速前缀（如 https://ghfast.top/），仅对 github.com 下载链接生效。 */
+    fun getGithubAccelPrefix(context: Context): String {
+        return getPrefs(context).getString(KEY_GITHUB_ACCEL, "") ?: ""
+    }
+
+    fun setGithubAccelPrefix(context: Context, prefix: String) {
+        getPrefs(context).edit().putString(KEY_GITHUB_ACCEL, prefix.trim().trimEnd('/')).apply()
+    }
+
     // ── 短信验证码 ──
     // 默认关闭（隐私考虑）；需先在「管理权限」授予 RECEIVE_SMS 才会收到短信。
 

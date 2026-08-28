@@ -38,6 +38,7 @@ import androidx.compose.material.icons.twotone.Storefront
 import androidx.compose.material.icons.twotone.Straighten
 import androidx.compose.material.icons.twotone.Sync
 import androidx.compose.material.icons.twotone.TableChart
+import androidx.compose.material.icons.twotone.Tune
 import androidx.compose.material.icons.twotone.ToggleOn
 import androidx.compose.material.icons.twotone.TypeSpecimen
 import androidx.compose.material.icons.twotone.Vibration
@@ -83,7 +84,8 @@ fun SettingsMainContent(
     onNavigateToAbout: () -> Unit,
     onNavigateToWebDav: () -> Unit = {},
     onNavigateToClipboardSync: () -> Unit = {},
-    onNavigateToPermissionManager: () -> Unit = {}
+    onNavigateToPermissionManager: () -> Unit = {},
+    onNavigateToExtensionStoreSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -290,6 +292,18 @@ fun SettingsMainContent(
                         title = "扩展商店",
                         subtitle = "下载输入方案 / 模型 / 插件",
                         onClick = onNavigateToMarket,
+                        showArrow = true
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    SettingsItem(
+                        icon = Icons.TwoTone.Tune,
+                        title = "拓展商店设置",
+                        subtitle = "切换官方/自定义仓库、GitHub 加速",
+                        onClick = onNavigateToExtensionStoreSettings,
                         showArrow = true
                     )
                     HorizontalDivider(

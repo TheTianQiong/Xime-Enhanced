@@ -38,7 +38,8 @@ fun SettingsScreen(
                 onNavigateToAbout = { navController.navigate(SettingsRoutes.About) },
                 onNavigateToWebDav = { navController.navigate(SettingsRoutes.WebDav) },
                 onNavigateToClipboardSync = { navController.navigate(SettingsRoutes.ClipboardSync) },
-                onNavigateToPermissionManager = { navController.navigate(SettingsRoutes.PermissionManager) }
+                onNavigateToPermissionManager = { navController.navigate(SettingsRoutes.PermissionManager) },
+                onNavigateToExtensionStoreSettings = { navController.navigate(SettingsRoutes.ExtensionStoreSettings) }
             )
         }
         composable(SettingsRoutes.Schema) {
@@ -238,6 +239,11 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.PermissionManager) {
             PermissionManagerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(SettingsRoutes.ExtensionStoreSettings) {
+            ExtensionStoreSettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

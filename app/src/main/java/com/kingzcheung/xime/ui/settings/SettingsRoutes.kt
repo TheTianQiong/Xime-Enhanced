@@ -27,4 +27,5 @@ object SettingsRoutes {
     const val SchemaDictBrowser = "schema_dict_browser"
     const val RimeFileBrowser = "rime_file_browser"
     const val PermissionManager = "permission_manager"
+    const val ExtensionStoreSettings = "extension_store_settings"
 }

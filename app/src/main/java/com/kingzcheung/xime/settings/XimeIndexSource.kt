@@ -5,6 +5,12 @@ import android.util.Log
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -69,10 +75,31 @@ object XimeIndexSource {
 
     private fun ensureConfigured(context: Context) {
         val cfg = KeysConfigHelper.loadXimeIndexConfig(context)
-        if (cfg.baseUrls != baseUrls) {
-            baseUrls = cfg.baseUrls
+        // 拓展商店设置：自定义仓库优先，否则用官方配置（index.ximei.me）
+        val configured = if (SettingsPreferences.isStoreRepoCustom(context)) {
+            val custom = SettingsPreferences.getStoreRepoUrl(context).trim()
+            if (custom.isNotBlank()) listOf(custom) else cfg.baseUrls.ifEmpty { defaultBaseUrls }
+        } else {
+            cfg.baseUrls.ifEmpty { defaultBaseUrls }
+        }
+        if (configured != baseUrls) {
+            baseUrls = configured
             mirrors = buildMirrors(baseUrls)
         }
+    }
+
+    /** 对 GitHub 下载链接应用用户配置的加速前缀（如 https://ghfast.top/）。 */
+    private fun acceleratedUrl(context: Context, url: String): String {
+        val prefix = SettingsPreferences.getGithubAccelPrefix(context).trim().trimEnd('/')
+        if (prefix.isEmpty()) return url
+        if (url.startsWith("https://github.com") ||
+            url.startsWith("https://raw.githubusercontent.com") ||
+            url.startsWith("https://objects.githubusercontent.com") ||
+            url.startsWith("https://api.github.com")
+        ) {
+            return "$prefix/$url"
+        }
+        return url
     }
 
     /** 镜像 base → 展示用主机名（如 index.ximei.me / fastly.jsdelivr.net）。 */
@@ -136,18 +163,33 @@ object XimeIndexSource {
         try {
             for (base in mirrors) {
                 val host = hostOf(base)
+                // 1. 标准 YAML 索引（plugins/index.yaml）
                 try {
-                    val text = fetchTextSingle(base, "plugins/index.yaml") ?: continue
-                    val direct = XimeIndexParser.parsePluginsDirectIndex(text)
-                    val plugins = direct.plugins.distinctBy { it.id }
-                        .map { XimeIndexParser.toPluginItem(it, appVersion, installedVersions) }
-                    if (plugins.isNotEmpty()) {
-                        return@withContext Result.success(
-                            PluginsFetch(plugins, host, direct.updatedAt)
-                        )
+                    val text = fetchTextSingle(base, "plugins/index.yaml")
+                    if (text != null) {
+                        val direct = XimeIndexParser.parsePluginsDirectIndex(text)
+                        val plugins = direct.plugins.distinctBy { it.id }
+                            .map { XimeIndexParser.toPluginItem(it, appVersion, installedVersions) }
+                        if (plugins.isNotEmpty()) {
+                            return@withContext Result.success(
+                                PluginsFetch(plugins, host, direct.updatedAt)
+                            )
+                        }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "fetchPlugins $host failed: ${e.message}")
+                    Log.w(TAG, "fetchPlugins $host yaml failed: ${e.message}")
+                }
+                // 2. 自定义 JSON 仓库（直接抓 base，如 ?format=json 的 files[] 结构）
+                try {
+                    val jsonText = fetchTextSingle(base, "")
+                    if (jsonText != null && jsonText.trimStart().startsWith("{")) {
+                        val plugins = parseThirdPartyJsonPlugins(jsonText, appVersion, installedVersions)
+                        if (plugins.isNotEmpty()) {
+                            return@withContext Result.success(PluginsFetch(plugins, host, ""))
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "fetchPlugins $host json failed: ${e.message}")
                 }
             }
             Result.failure(IOException("无法获取插件列表（已尝试 ${mirrors.size} 个镜像）"))
@@ -179,7 +221,7 @@ object XimeIndexSource {
         val tmpFile = File(context.cacheDir, "xime_plugin_${plugin.id}_$fileName")
 
         val downloadResult = try {
-            client.newCall(Request.Builder().url(dl.url).build()).execute().use { response ->
+            client.newCall(Request.Builder().url(acceleratedUrl(context, dl.url)).build()).execute().use { response ->
                 if (!response.isSuccessful) {
                     return@withContext InstallResult(false, failureReason = "下载失败（HTTP ${response.code}）")
                 }
@@ -277,7 +319,7 @@ object XimeIndexSource {
 
         for (dl in items) {
             val result = SchemaManager.downloadToMarket(
-                context, dl.url, scheme.id, dl.fileName, dl.sha256?.takeIf { it.isNotBlank() },
+                context, acceleratedUrl(context, dl.url), scheme.id, dl.fileName, dl.sha256?.takeIf { it.isNotBlank() },
                 onProgress = { read, _ ->
                     val overall = accumulatedBytes + read
                     if (totalBytesAll > 0) onDownloadProgress(overall, totalBytesAll)
@@ -329,5 +371,54 @@ object XimeIndexSource {
             return@withContext InstallResult(false, failureReason = reason)
         }
         InstallResult(success = true, unresolvedDeps = result.unresolvedDeps)
+    }
+
+    // ================= 第三方 JSON 仓库（?format=json 的 files[] 结构） =================
+
+    @Serializable
+    private data class ThirdPartyRepo(
+        val files: List<ThirdPartyFile> = emptyList(),
+    )
+
+    @Serializable
+    private data class ThirdPartyFile(
+        val name: String = "",
+        val version: String = "",
+        val url: String = "",
+        val description: String = "",
+        val extra: JsonObject = JsonObject(emptyMap()),
+    )
+
+    /** 解析第三方 JSON 仓库（files[] → 插件列表）。 */
+    private fun parseThirdPartyJsonPlugins(
+        text: String,
+        appVersion: String,
+        installedVersions: Map<String, String>,
+    ): List<MarketPluginItem> {
+        val repo = try {
+            Json { ignoreUnknownKeys = true }.decodeFromString<ThirdPartyRepo>(text)
+        } catch (e: Exception) {
+            Log.w(TAG, "parseThirdPartyJsonPlugins failed: ${e.message}")
+            return emptyList()
+        }
+        return repo.files.mapNotNull { f ->
+            if (f.name.isBlank() || f.url.isBlank()) return@mapNotNull null
+            val displayName = f.extra["DisplayName"]?.jsonPrimitive?.contentOrNull ?: f.name
+            val tags = f.extra["Tag"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val base = f.name.removeSuffix(".xipk")
+            val id = base.removeSuffix("-${f.version}").ifBlank { base }
+            val plugin = MarketPlugin(
+                id = id,
+                name = displayName,
+                description = f.description,
+                type = "remote",
+                tags = tags,
+                currentVersion = f.version,
+                versions = listOf(
+                    PluginVersion(version = f.version, downloadUrls = listOf(DownloadItem(url = f.url)))
+                ),
+            )
+            XimeIndexParser.toPluginItem(plugin, appVersion, installedVersions)
+        }
     }
 }
