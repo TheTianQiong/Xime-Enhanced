@@ -76,18 +76,21 @@ class XiaoheShuangpinTest {
 
     @Test
     fun `双韵母键上下两排显示`() {
-        assertEquals("iang\nuang", XiaoheShuangpin.keyLabel("l", showYunmu = true))
+        assertEquals("ue\nve", XiaoheShuangpin.keyLabel("t", showYunmu = true))
+        assertEquals("o\nuo", XiaoheShuangpin.keyLabel("o", showYunmu = true))
+        assertEquals("ong\niong", XiaoheShuangpin.keyLabel("s", showYunmu = true))
         assertEquals("uai\ning", XiaoheShuangpin.keyLabel("k", showYunmu = true))
-        assertEquals("iong\nong", XiaoheShuangpin.keyLabel("s", showYunmu = true))
-        assertEquals("ua\nia", XiaoheShuangpin.keyLabel("x", showYunmu = true))
-        assertEquals("uo\no", XiaoheShuangpin.keyLabel("o", showYunmu = true))
-        assertEquals("uan\ner", XiaoheShuangpin.keyLabel("r", showYunmu = true))
-        assertEquals("ui\nü", XiaoheShuangpin.keyLabel("v", showYunmu = true))
+        assertEquals("iang\nuang", XiaoheShuangpin.keyLabel("l", showYunmu = true))
+        assertEquals("ia\nua", XiaoheShuangpin.keyLabel("x", showYunmu = true))
+        assertEquals("ui\nv", XiaoheShuangpin.keyLabel("v", showYunmu = true))
     }
 
     @Test
-    fun `双韵母键列表`() {
+    fun `单韵母键列表`() {
         assertEquals(listOf("iang", "uang"), XiaoheShuangpin.yunmuListForKey("l"))
+        assertEquals(listOf("ue", "ve"), XiaoheShuangpin.yunmuListForKey("t"))
+        // r 键仅 uan（非双韵母）
+        assertEquals(listOf("uan"), XiaoheShuangpin.yunmuListForKey("r"))
         assertEquals(listOf("ai"), XiaoheShuangpin.yunmuListForKey("d"))
         assertEquals(emptyList<String>(), XiaoheShuangpin.yunmuListForKey("1"))
     }

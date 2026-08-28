@@ -619,6 +619,18 @@ object SettingsPreferences {
         getPrefs(context).edit().putString(KEY_CLIPBOARD_SYNC_PLUGIN_ID, pluginId).apply()
     }
 
+    // ── 双拼提示（小鹤双拼动态键面 + 候选栏分解，默认开启）──
+
+    private const val KEY_SHUANGPIN_HINT_ENABLED = "shuangpin_hint_enabled"
+
+    fun isShuangpinHintEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_SHUANGPIN_HINT_ENABLED, true)
+    }
+
+    fun setShuangpinHintEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SHUANGPIN_HINT_ENABLED, enabled).apply()
+    }
+
     // ── 短信验证码 ──
     // 默认关闭（隐私考虑）；需先在「管理权限」授予 RECEIVE_SMS 才会收到短信。
 

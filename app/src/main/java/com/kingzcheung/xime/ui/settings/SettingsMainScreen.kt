@@ -33,6 +33,7 @@ import androidx.compose.material.icons.twotone.Keyboard
 import androidx.compose.material.icons.twotone.KeyboardAlt
 import androidx.compose.material.icons.twotone.Palette
 import androidx.compose.material.icons.twotone.Security
+import androidx.compose.material.icons.twotone.SortByAlpha
 import androidx.compose.material.icons.twotone.Storefront
 import androidx.compose.material.icons.twotone.Straighten
 import androidx.compose.material.icons.twotone.Sync
@@ -237,6 +238,23 @@ fun SettingsMainContent(
                         subtitle = "候选词显示、键盘布局等",
                         onClick = onNavigateToLayoutDisplay,
                         showArrow = true
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    var shuangpinHintEnabled by remember { mutableStateOf(SettingsPreferences.isShuangpinHintEnabled(context)) }
+                    SettingsToggleItem(
+                        icon = Icons.TwoTone.SortByAlpha,
+                        title = "双拼提示",
+                        subtitle = "小鹤双拼动态键面（声母↔韵母）与候选栏分解提示",
+                        checked = shuangpinHintEnabled,
+                        showArrow = false,
+                        onCheckedChange = { enabled ->
+                            shuangpinHintEnabled = enabled
+                            SettingsPreferences.setShuangpinHintEnabled(context, enabled)
+                        }
                     )
                 })
             }

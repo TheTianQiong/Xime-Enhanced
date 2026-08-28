@@ -652,10 +652,15 @@ fun KeyboardView(
                             is KeyboardLayoutState.T9Pinyin -> t9OnKeyPress
                             is KeyboardLayoutState.Symbol -> symbolOnKeyPress
                         }
-                        // 双拼动态键面：小鹤双拼方案下，偶数键显示声母映射、奇数键切换韵母映射
-                        val shuangpinKeyHint = remember(candidateState.value.inputText, state.currentSchemaId) {
+                        // 双拼动态键面：小鹤双拼方案下，偶数键显示声母映射、奇数键切换韵母映射；
+                        // 可通过设置「外观与交互 → 双拼提示」开关关闭
+                        val hintContext = LocalContext.current
+                        val shuangpinHintEnabled = SettingsPreferences.isShuangpinHintEnabled(hintContext)
+                        val shuangpinKeyHint = remember(
+                            candidateState.value.inputText, state.currentSchemaId, shuangpinHintEnabled
+                        ) {
                             ShuangpinKeyHint(
-                                active = XiaoheShuangpin.isFlypySchema(state.currentSchemaId),
+                                active = shuangpinHintEnabled && XiaoheShuangpin.isFlypySchema(state.currentSchemaId),
                                 showYunmu = XiaoheShuangpin.shouldShowYunmu(candidateState.value.inputText),
                             )
                         }

@@ -20,24 +20,29 @@ object XiaoheShuangpin {
         "v" to "zh", "i" to "ch", "u" to "sh",
     )
 
-    /** 韵母键位（第二键）：按键 → 主韵母（用于分解）。 */
+    /**
+     * 韵母键位（第二键）：按键 → 主韵母（用于分解）。
+     * 对应关系按小鹤双拼标准整理（用户校正版）：
+     * a-a b-in c-ao d-ai e-e f-en g-eng h-ang i-i j-an k-uai|ing l-iang|uang
+     * m-ian n-iao o-o|uo p-ie q-iu r-uan s-ong|iong t-ue|ve u-u v-ui|v w-ei x-ia|ua y-un z-ou
+     */
     private val YUNMU = mapOf(
-        "a" to "a", "o" to "uo", "e" to "e", "i" to "i", "u" to "u", "v" to "ü",
-        "d" to "ai", "w" to "ei", "c" to "ao", "z" to "ou", "q" to "iu",
-        "x" to "ia", "t" to "üe", "r" to "uan", "j" to "an", "f" to "en",
-        "b" to "in", "y" to "un", "h" to "ang", "g" to "eng", "k" to "ing",
-        "s" to "ong", "m" to "ian", "l" to "uang", "n" to "iao", "p" to "ie",
+        "a" to "a", "b" to "in", "c" to "ao", "d" to "ai", "e" to "e", "f" to "en",
+        "g" to "eng", "h" to "ang", "i" to "i", "j" to "an", "k" to "uai", "l" to "iang",
+        "m" to "ian", "n" to "iao", "o" to "o", "p" to "ie", "q" to "iu", "r" to "uan",
+        "s" to "ong", "t" to "ue", "u" to "u", "v" to "ui", "w" to "ei", "x" to "ia",
+        "y" to "un", "z" to "ou",
     )
 
     /** 上下文相关的双韵母键：同一按键可对应两个韵母（键面上下两排显示）。 */
     private val YUNMU_DUAL = mapOf(
-        "l" to listOf("iang", "uang"),
+        "t" to listOf("ue", "ve"),
+        "o" to listOf("o", "uo"),
+        "s" to listOf("ong", "iong"),
         "k" to listOf("uai", "ing"),
-        "s" to listOf("iong", "ong"),
-        "x" to listOf("ua", "ia"),
-        "o" to listOf("uo", "o"),
-        "r" to listOf("uan", "er"),
-        "v" to listOf("ui", "ü"),
+        "l" to listOf("iang", "uang"),
+        "x" to listOf("ia", "ua"),
+        "v" to listOf("ui", "v"),
     )
 
     /** 用于「双拼对照」面板展示的分组数据。 */
