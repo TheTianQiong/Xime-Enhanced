@@ -30,40 +30,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-/** 双拼对照分组：声母 / 韵母。 */
-data class ShuangpinGroup(
-    val title: String,
-    /** 每一项为「拼音 → 按键」。 */
-    val items: List<Pair<String, String>>,
-)
-
-/** 小鹤双拼（双拼鹤）键位表。 */
-object XiaoheShuangpin {
-    val groups: List<ShuangpinGroup> = listOf(
-        ShuangpinGroup(
-            title = "声母",
-            items = listOf(
-                "b" to "b", "p" to "p", "m" to "m", "f" to "f", "d" to "d",
-                "t" to "t", "n" to "n", "l" to "l", "g" to "g", "k" to "k",
-                "h" to "h", "j" to "j", "q" to "q", "x" to "x", "r" to "r",
-                "z" to "z", "c" to "c", "s" to "s", "y" to "y", "w" to "w",
-                "zh" to "v", "ch" to "i", "sh" to "u",
-            ),
-        ),
-        ShuangpinGroup(
-            title = "韵母",
-            items = listOf(
-                "a" to "a", "o" to "o", "e" to "e", "i" to "i", "u" to "u", "ü" to "v",
-                "ai" to "d", "ei" to "w", "ui" to "v", "ao" to "c", "ou" to "z", "iu" to "q",
-                "ie" to "x", "üe" to "t", "er" to "r", "an" to "j", "en" to "f", "in" to "b",
-                "un" to "y", "ang" to "h", "eng" to "g", "ing" to "k", "ong" to "s",
-                "ia" to "x", "ua" to "w", "uo" to "o", "ian" to "m", "uan" to "r",
-                "iang" to "l", "uang" to "l", "iong" to "s", "uai" to "k",
-            ),
-        ),
-    )
-}
+import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 
 /**
  * IME 目录菜单中的「双拼对照」参考面板。
