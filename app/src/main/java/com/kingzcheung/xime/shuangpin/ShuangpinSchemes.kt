@@ -23,10 +23,10 @@ class ShuangpinScheme(
     /** 第二键 → 韵母列表。 */
     fun yunmuListForKey(key: String): List<String> = yunmu[key] ?: emptyList()
 
-    /** 动态键面标签：偶数键显示声母映射，奇数键（已输声母）显示韵母映射（双韵母上下两排）。 */
+    /** 动态键面标签：偶数键显示声母映射，奇数键（已输声母）显示韵母映射（双韵母键显示主韵母单行）。 */
     fun keyLabel(key: String, showYunmu: Boolean): String {
         if (!showYunmu) return shengmu[key] ?: key
-        return yunmuListForKey(key).joinToString("\n").ifEmpty { key }
+        return yunmuListForKey(key).firstOrNull() ?: key
     }
 
     /** 把键入键位分解为「声母 + 韵母」列表。 */
