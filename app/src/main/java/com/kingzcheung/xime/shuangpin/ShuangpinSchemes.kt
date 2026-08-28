@@ -160,10 +160,27 @@ object ShuangpinSchemes {
         schemaKeys = listOf("double_pinyin"),
     )
 
-    /** 自然码（紫光双拼）。 */
+    /** 自然码双拼。 */
     val ZIRANMA = ShuangpinScheme(
         id = "ziranma",
         displayName = "自然码双拼",
+        shengmu = mapOf("v" to "zh", "i" to "ch", "u" to "sh"),
+        yunmu = mapOf(
+            "a" to listOf("a"), "b" to listOf("iao"), "c" to listOf("uai"), "d" to listOf("ie"),
+            "e" to listOf("e"), "f" to listOf("ian"), "g" to listOf("iang", "uang"), "h" to listOf("ong", "iong"),
+            "i" to listOf("i"), "j" to listOf("er", "iu"), "k" to listOf("ei"), "l" to listOf("uan"),
+            "m" to listOf("un"), "n" to listOf("ue", "ve"), "o" to listOf("o", "uo"), "p" to listOf("ai"),
+            "q" to listOf("ao"), "r" to listOf("an"), "s" to listOf("ang"), "t" to listOf("eng"),
+            "u" to listOf("u"), "v" to listOf("ui", "v"), "w" to listOf("en"), "x" to listOf("ia", "ua"),
+            "y" to listOf("in", "uai"), "z" to listOf("ou"),
+        ),
+        schemaKeys = listOf("ziranma", "zrm"),
+    )
+
+    /** 紫光双拼。 */
+    val ZIGUANG = ShuangpinScheme(
+        id = "ziguang",
+        displayName = "紫光双拼",
         shengmu = mapOf("u" to "zh", "i" to "sh", "a" to "ch"),
         yunmu = mapOf(
             "a" to listOf("a"), "b" to listOf("iao"), "d" to listOf("ie"),
@@ -171,10 +188,10 @@ object ShuangpinSchemes {
             "i" to listOf("i"), "j" to listOf("er", "iu"), "k" to listOf("ei"), "l" to listOf("uan"),
             "m" to listOf("un"), "n" to listOf("ue", "ve", "ui"), "o" to listOf("o", "uo"), "p" to listOf("ai"),
             "q" to listOf("ao"), "r" to listOf("an"), "s" to listOf("ang"), "t" to listOf("eng"),
-            "u" to listOf("u"), "v" to listOf("ui", "v"), "w" to listOf("en"), "x" to listOf("ia", "ua"),
+            "u" to listOf("u"), "v" to listOf("v"), "w" to listOf("en"), "x" to listOf("ia", "ua"),
             "y" to listOf("in", "uai"), "z" to listOf("ou"),
         ),
-        schemaKeys = listOf("ziguang", "ziranma"),
+        schemaKeys = listOf("ziguang"),
     )
 
     /** 微软双拼。 */
@@ -245,7 +262,7 @@ object ShuangpinSchemes {
         schemaKeys = listOf("jiajia"),
     )
 
-    val all: List<ShuangpinScheme> = listOf(FLYPY, TONGYONG, ZIRANMA, MSPY, ABC, SOGOU, JIAJIA)
+    val all: List<ShuangpinScheme> = listOf(FLYPY, TONGYONG, ZIRANMA, ZIGUANG, MSPY, ABC, SOGOU, JIAJIA)
 
     /** 根据 Rime schema_id 检测双拼方案；非双拼返回 null。 */
     fun detect(schemaId: String): ShuangpinScheme? {

@@ -13,7 +13,8 @@ class ShuangpinSchemesTest {
     fun `检测各双拼方案`() {
         assertEquals("flypy", ShuangpinSchemes.detect("double_pinyin_flypy")?.id)
         assertEquals("tongyong", ShuangpinSchemes.detect("double_pinyin")?.id)
-        assertEquals("ziranma", ShuangpinSchemes.detect("double_pinyin_ziguang")?.id)
+        assertEquals("ziranma", ShuangpinSchemes.detect("double_pinyin_zrm")?.id)
+        assertEquals("ziguang", ShuangpinSchemes.detect("double_pinyin_ziguang")?.id)
         assertEquals("mspy", ShuangpinSchemes.detect("double_pinyin_mspy")?.id)
         assertEquals("abc", ShuangpinSchemes.detect("double_pinyin_abc")?.id)
         assertEquals("sogou", ShuangpinSchemes.detect("double_pinyin_sogou")?.id)
@@ -26,18 +27,35 @@ class ShuangpinSchemesTest {
 
     @Test
     fun `自然码双拼对应关系`() {
-        val ziranma = ShuangpinSchemes.detect("double_pinyin_ziguang")!!
-        // 声母：zh→u、ch→a、sh→i
-        assertEquals("zh", ziranma.shengmuForKey("u"))
-        assertEquals("ch", ziranma.shengmuForKey("a"))
-        assertEquals("sh", ziranma.shengmuForKey("i"))
+        val ziranma = ShuangpinSchemes.detect("double_pinyin_zrm")!!
+        assertEquals("ziranma", ziranma.id)
+        // 声母：zh→v、ch→i、sh→u
+        assertEquals("zh", ziranma.shengmuForKey("v"))
+        assertEquals("ch", ziranma.shengmuForKey("i"))
+        assertEquals("sh", ziranma.shengmuForKey("u"))
         // 韵母：w→en、t→eng、m→un、j→er/iu
         assertEquals("en", ziranma.keyLabel("w", showYunmu = true))
         assertEquals("eng", ziranma.keyLabel("t", showYunmu = true))
         assertEquals("un", ziranma.keyLabel("m", showYunmu = true))
         assertEquals("er\niu", ziranma.keyLabel("j", showYunmu = true))
+        // v→ui|v
+        assertEquals("ui\nv", ziranma.keyLabel("v", showYunmu = true))
+    }
+
+    @Test
+    fun `紫光双拼对应关系`() {
+        val ziguang = ShuangpinSchemes.detect("double_pinyin_ziguang")!!
+        assertEquals("ziguang", ziguang.id)
+        // 声母：zh→u、ch→a、sh→i
+        assertEquals("zh", ziguang.shengmuForKey("u"))
+        assertEquals("ch", ziguang.shengmuForKey("a"))
+        assertEquals("sh", ziguang.shengmuForKey("i"))
+        // c 键无韵母
+        assertTrue(ziguang.yunmuListForKey("c").isEmpty())
+        // v→v（无 ui）
+        assertEquals("v", ziguang.keyLabel("v", showYunmu = true))
         // 三韵母键 n→ue/ve/ui 用括号合并为两行
-        assertEquals("u(v)e\nui", ziranma.keyLabel("n", showYunmu = true))
+        assertEquals("u(v)e\nui", ziguang.keyLabel("n", showYunmu = true))
     }
 
     @Test
