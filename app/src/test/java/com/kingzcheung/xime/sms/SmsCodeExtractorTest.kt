@@ -37,4 +37,24 @@ class SmsCodeExtractorTest {
         assertNull(SmsCodeExtractor.extract(""))
         assertNull(SmsCodeExtractor.extract(null))
     }
+
+    @Test
+    fun `自定义正则提取`() {
+        // 简单数字组正则
+        assertEquals("123456", SmsCodeExtractor.extractWithRegex("验证码 123456，请勿泄露", "\\d{6}"))
+        // 捕获组：取第一个非空分组
+        assertEquals("8888", SmsCodeExtractor.extractWithRegex("您的验证码为8888", "(\\d{4,6})"))
+        // 命名捕获组
+        assertEquals("9527", SmsCodeExtractor.extractWithRegex("code=9527 end", "code=(?<c>\\d{4})"))
+        // 前后缀正则
+        assertEquals("334455", SmsCodeExtractor.extractWithRegex("安全码 334455 已发送", "安全码 (\\d{6})"))
+    }
+
+    @Test
+    fun `自定义正则异常与未匹配返回空`() {
+        assertNull(SmsCodeExtractor.extractWithRegex("验证码 123456", "[无效正则("))
+        assertNull(SmsCodeExtractor.extractWithRegex("没有数字", "\\d{4,6}"))
+        assertNull(SmsCodeExtractor.extractWithRegex(null, "\\d{4,6}"))
+        assertNull(SmsCodeExtractor.extractWithRegex("", "\\d{4,6}"))
+    }
 }

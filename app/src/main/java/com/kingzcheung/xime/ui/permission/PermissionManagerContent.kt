@@ -12,6 +12,7 @@ import androidx.compose.material.icons.twotone.Sms
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kingzcheung.xime.settings.SettingsPreferences
+import com.kingzcheung.xime.sms.SmsCodePluginConfig
 import com.kingzcheung.xime.util.PermissionHelper
 
 /** 一条可管理权限的元信息。 */
@@ -77,6 +79,7 @@ fun PermissionManagerContent(
 
     var smsEnabled by remember { mutableStateOf(SettingsPreferences.isSmsCodeEnabled(context)) }
     var autoCopy by remember { mutableStateOf(SettingsPreferences.isSmsAutoCopyEnabled(context)) }
+    var smsRegex by remember { mutableStateOf(SmsCodePluginConfig.getRegex(context) ?: "") }
 
     Column(modifier = modifier) {
         // 权限列表
@@ -125,6 +128,27 @@ fun PermissionManagerContent(
                 autoCopy = it
                 SettingsPreferences.setSmsAutoCopyEnabled(context, it)
             },
+        )
+
+        OutlinedTextField(
+            value = smsRegex,
+            onValueChange = {
+                smsRegex = it
+                SmsCodePluginConfig.setRegex(context, it)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            label = { Text("提取正则（可选）") },
+            placeholder = { Text("如 (?<!\\d)\\d{4,6}(?!\\d)") },
+            supportingText = {
+                Text("留空使用内置智能提取；含捕获组时取第一个非空分组。可在插件「短信验证码（增强）」设置页同步修改。")
+            },
+            singleLine = false,
+            minLines = 1,
+            maxLines = 3,
+            enabled = smsEnabled,
+            textStyle = MaterialTheme.typography.bodyMedium,
         )
 
         Text(

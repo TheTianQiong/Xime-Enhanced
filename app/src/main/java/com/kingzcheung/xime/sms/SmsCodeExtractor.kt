@@ -21,6 +21,29 @@ object SmsCodeExtractor {
     /** 独立的 4-6 位数字组：前后均不能是数字，避免匹配到手机号 / 长订单号的一部分。 */
     private val DIGIT_GROUP = Regex("(?<!\\d)\\d{4,6}(?!\\d)")
 
+    /**
+     * 使用用户自定义正则提取验证码。
+     *
+     * 规则：
+     * - 若正则有捕获组，返回第一个非空捕获组的内容；
+     * - 否则返回整个匹配文本；
+     * - 正则非法或未匹配返回 null。
+     */
+    fun extractWithRegex(body: String?, regex: String): String? {
+        if (body.isNullOrBlank()) return null
+        return try {
+            val r = Regex(regex)
+            val m = r.find(body) ?: return null
+            val groupCount = m.groupValues.size - 1
+            for (i in 1..groupCount) {
+                if (m.groupValues[i].isNotBlank()) return m.groupValues[i]
+            }
+            m.value.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** 关键词上下文窗口半径（字符数）。 */
     private const val WINDOW = 20
 

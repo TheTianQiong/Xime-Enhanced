@@ -6,6 +6,7 @@ import android.content.Intent
 import android.provider.Telephony
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.sms.SmsCodeExtractor
+import com.kingzcheung.xime.sms.SmsCodePluginConfig
 import com.kingzcheung.xime.sms.SmsCodeStore
 
 /**
@@ -29,7 +30,11 @@ class SmsCodeReceiver : BroadcastReceiver() {
 
         val body = messages.joinToString("") { it.messageBody ?: "" }
         val sender = messages.firstOrNull()?.originatingAddress ?: ""
-        val code = SmsCodeExtractor.extract(body) ?: return
+        // 优先使用 sms-code 插件配置的自定义正则；未配置则用内置智能提取
+        val customRegex = SmsCodePluginConfig.getRegex(context)
+        val code = customRegex?.let { SmsCodeExtractor.extractWithRegex(body, it) }
+            ?: SmsCodeExtractor.extract(body)
+            ?: return
 
         SmsCodeStore.init(context)
         SmsCodeStore.add(context, code, sender)
