@@ -37,4 +37,5 @@ sealed interface OverlayRoute {
     data object CandidatePage : OverlayRoute
     data object Edit : OverlayRoute
     data object PermissionManager : OverlayRoute
+    data object ShuangpinReference : OverlayRoute
 }

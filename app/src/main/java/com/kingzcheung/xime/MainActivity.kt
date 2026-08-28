@@ -223,6 +223,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // 浏览器/文件管理器直接打开 .xipk 插件 / .yaml 方案文件
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data
+                if (uri != null) {
+                    val mime = intent.type
+                    if (mime?.startsWith("image/") == true) {
+                        importThemeImage(uri, mime)
+                    } else {
+                        importSchema(uri)
+                    }
+                }
+            }
         }
     }
     

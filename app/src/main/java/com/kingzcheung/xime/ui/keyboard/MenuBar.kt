@@ -80,6 +80,7 @@ data class MenuBarCallbacks(
     val onFloatingModeToggle: (() -> Unit)? = null,
     val onToolbarCustomize: () -> Unit = {},
     val onPermissionManager: () -> Unit = {},
+    val onShuangpinReference: () -> Unit = {},
     val onToggleSchemaSwitch: ((SchemaSwitchUiState) -> Unit)? = null,
 )
 
@@ -145,6 +146,7 @@ fun MenuBar(
         ) + switchItems + listOf(
             MenuItem(customizeIcon, "定制工具栏", callbacks.onToolbarCustomize),
             MenuItem(permissionIcon, "管理权限", callbacks.onPermissionManager),
+            MenuItem(icon = null, label = "双拼对照", action = callbacks.onShuangpinReference, textIcon = "拼"),
             // 悬浮模式下键盘内容为缩放的浮动卡片，高度不可调节，隐藏该入口
             if (!state.isFloatingMode) MenuItem(keyboardResizeIcon, "键盘调节", callbacks.onKeyboardResize) else null,
             MenuItem(darkModeIcon, darkModeLabel, callbacks.onToggleDarkMode),

@@ -60,6 +60,7 @@ import com.kingzcheung.xime.sms.SmsCodeStore
 import com.kingzcheung.xime.ui.menubar.ClipboardView
 import com.kingzcheung.xime.ui.menubar.PermissionManagerView
 import com.kingzcheung.xime.ui.menubar.SchemaListView
+import com.kingzcheung.xime.ui.menubar.ShuangpinReferenceView
 import com.kingzcheung.xime.ui.menubar.ToolbarCustomizeView
 import com.kingzcheung.xime.ui.theme.KeyboardThemes
 import com.kingzcheung.xime.ui.theme.keyboardBackground
@@ -905,6 +906,7 @@ fun KeyboardView(
                             onToggleDarkMode = { callbacks.onToggleDarkMode?.invoke() },
                             onToolbarCustomize = { viewModel.showOverlay(OverlayRoute.ToolbarCustomize) },
                             onPermissionManager = { viewModel.showOverlay(OverlayRoute.PermissionManager) },
+                            onShuangpinReference = { viewModel.showOverlay(OverlayRoute.ShuangpinReference) },
                             onFloatingModeToggle = { callbacks.onFloatingModeChange?.invoke(!state.isFloatingMode); viewModel.closeOverlay() },
                             onToggleSchemaSwitch = { sw -> callbacks.onToggleSchemaSwitch?.invoke(sw); viewModel.closeOverlay() },
                         ),
@@ -964,6 +966,15 @@ fun KeyboardView(
                         modifier = Modifier.fillMaxWidth().fillMaxHeight()
                     )
                     is OverlayRoute.PermissionManager -> PermissionManagerView(
+                        backgroundColor = keyboardBgColor,
+                        keyTextColor = keyTextColor,
+                        accentColor = accentColor,
+                        keyBgColor = keyBgColor,
+                        onBack = { viewModel.closeOverlay() },
+                        bottomPaddingDp = state.keyboardBottomPaddingDp,
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight()
+                    )
+                    is OverlayRoute.ShuangpinReference -> ShuangpinReferenceView(
                         backgroundColor = keyboardBgColor,
                         keyTextColor = keyTextColor,
                         accentColor = accentColor,
