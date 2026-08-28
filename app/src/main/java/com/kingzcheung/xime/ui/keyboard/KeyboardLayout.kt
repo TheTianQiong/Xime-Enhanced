@@ -117,6 +117,16 @@ private fun effectiveKeyLabel(key: String, isAsciiMode: Boolean): String {
     return KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
 }
 
+/** 双拼提示状态：(是否激活, 是否显示韵母)。 */
+@Composable
+private fun shuangpinHintState(): Pair<Boolean, Boolean> {
+    val hint = LocalShuangpinKeyHint.current
+    return hint.active to hint.showYunmu
+}
+
+/** 双拼韵母键面统一字号（避免长短不一）。 */
+private val ShuangpinHintFontSize = 13.sp
+
 @Composable
 fun KeyboardLayout(
     onKeyPress: (String) -> Unit,
@@ -502,6 +512,7 @@ fun KeyboardLayout(
                                         Unit
                                     } }
 
+                                    val (shpActive, shpYunmu) = shuangpinHintState()
                                     SwipeableKeyButton(
                                         layoutMode = KeysConfigHelper.getButtonLayout(isAsciiMode),
                                         text = displayText,
@@ -509,10 +520,11 @@ fun KeyboardLayout(
                                         backgroundColor = keyBackgroundColor,
                                         textColor = keyTextColor,
                                         modifier = Modifier.weight(1f),
-                                        swipeText = swipeUpText,
-                                        swipeDownText = swipeDownBubbleText,
-                                        swipeUpKeyLabel = swipeUpKeyLabel,
-                                        swipeDownKeyLabel = if ((swipeDownDisplay == DisplayMode.KEY || swipeDownDisplay == DisplayMode.BOTH)) swipeDownLabel else null,
+                                        swipeText = if (shpActive) null else swipeUpText,
+                                        swipeDownText = if (shpActive) null else swipeDownBubbleText,
+                                        swipeUpKeyLabel = if (shpActive) null else swipeUpKeyLabel,
+                                        swipeDownKeyLabel = if (shpActive) null else (if ((swipeDownDisplay == DisplayMode.KEY || swipeDownDisplay == DisplayMode.BOTH)) swipeDownLabel else null),
+                                        fontSize = if (shpActive && shpYunmu) ShuangpinHintFontSize else TextUnit.Unspecified,
                                         onSwipe = if (swipeUpCommitValue != null && swipeUpAction != GestureAction.NONE) { { onKeyPress(swipeUpCommitValue) } } else null,
                                         onSwipeDown = onSwipeDown,
                                         onSwipeStateChange = onSwipeStateChange,
@@ -1034,6 +1046,7 @@ fun KeyboardRowWithConfig(
                 Unit
             } }
 
+            val (shpActive, shpYunmu) = shuangpinHintState()
             SwipeableKeyButton(
                 layoutMode = KeysConfigHelper.getButtonLayout(isAsciiMode),
                 text = displayText,
@@ -1041,10 +1054,10 @@ fun KeyboardRowWithConfig(
                 backgroundColor = config.keyBackgroundColor,
                 textColor = config.keyTextColor,
                 modifier = Modifier.weight(1f),
-                swipeText = swipeUpText,
-                swipeDownText = swipeDownBubbleText,
-                swipeUpKeyLabel = swipeUpKeyLabel,
-                swipeDownKeyLabel = if ((swipeDownDisplay == DisplayMode.KEY || swipeDownDisplay == DisplayMode.BOTH) && swipeDownHintsEnabled) swipeDownLabel else null,
+                swipeText = if (shpActive) null else swipeUpText,
+                swipeDownText = if (shpActive) null else swipeDownBubbleText,
+                swipeUpKeyLabel = if (shpActive) null else swipeUpKeyLabel,
+                swipeDownKeyLabel = if (shpActive) null else (if ((swipeDownDisplay == DisplayMode.KEY || swipeDownDisplay == DisplayMode.BOTH) && swipeDownHintsEnabled) swipeDownLabel else null),
                 onSwipe = if (swipeUpCommitValue != null && swipeUpAction != GestureAction.NONE) { { onKeyPress(swipeUpCommitValue) } } else null,
                 onSwipeDown = onSwipeDown,
                 onSwipeStateChange = onSwipeStateChange,
@@ -1052,7 +1065,7 @@ fun KeyboardRowWithConfig(
                 onRelease = onRelease,
                 onLongPressSelect = onLongPressSelect,
                 longPressItems = longPressLabels,
-                fontSize = config.fontSize,
+                fontSize = if (shpActive && shpYunmu) ShuangpinHintFontSize else config.fontSize,
                 swipeFontSize = config.swipeFontSize,
                 shadowEnabled = config.shadowEnabled,
                 shadowElevation = config.shadowElevation,
@@ -2066,16 +2079,17 @@ fun CompactKeyboardRowWithConfig(
                 Unit
             } }
 
+            val (shpActive, shpYunmu) = shuangpinHintState()
             SwipeableKeyButtonLandscape(
                 text = compactDisplayText,
                 onClick = compactOnClick,
                 backgroundColor = config.keyBackgroundColor,
                 textColor = config.keyTextColor,
                 modifier = Modifier.weight(1f),
-                swipeText = swipeUpText,
-                swipeDownText = swipeDownBubbleText,
-                swipeUpKeyLabel = swipeUpKeyLabel,
-                swipeDownKeyLabel = swipeDownKeyLabel,
+                swipeText = if (shpActive) null else swipeUpText,
+                swipeDownText = if (shpActive) null else swipeDownBubbleText,
+                swipeUpKeyLabel = if (shpActive) null else swipeUpKeyLabel,
+                swipeDownKeyLabel = if (shpActive) null else swipeDownKeyLabel,
                 onSwipe = if (swipeUpCommitValue != null && swipeUpAction != GestureAction.NONE) { { onKeyPress(swipeUpCommitValue) } } else null,
                 onSwipeDown = compactOnSwipeDown,
                 onSwipeStateChange = onSwipeStateChange,
@@ -2083,7 +2097,7 @@ fun CompactKeyboardRowWithConfig(
                 onRelease = compactOnRelease,
                 onLongPressSelect = compactOnLongPressSelect,
                 longPressItems = longPressLabels,
-                fontSize = config.fontSize,
+                fontSize = if (shpActive && shpYunmu) ShuangpinHintFontSize else config.fontSize,
                 swipeFontSize = config.swipeFontSize,
                 shadowEnabled = config.shadowEnabled,
                 shadowElevation = config.shadowElevation,
