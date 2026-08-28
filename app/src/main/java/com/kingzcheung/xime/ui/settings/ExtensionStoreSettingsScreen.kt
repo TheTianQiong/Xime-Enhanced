@@ -143,12 +143,6 @@ fun ExtensionStoreSettingsScreen(
                 enabled = preset == SettingsPreferences.STORE_REPO_CUSTOM,
                 singleLine = true,
             )
-            Text(
-                text = "自定义仓库示例：https://lib.878624.xyz/xime-enhanced/?format=json",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
-            )
 
             OutlinedTextField(
                 value = accel,
@@ -195,6 +189,37 @@ fun ExtensionStoreSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp),
+            )
+
+            Text(
+                text = "开发者：仓库内容如何被识别",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+            )
+            Text(
+                text = "① 官方 / 标准仓库：在仓库根目录提供三个索引文件：\n" +
+                    "• rimes/index.yaml → 方案\n" +
+                    "• models/index.yaml → 模型\n" +
+                    "• plugins/index.yaml → 插件",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "② 第三方 JSON 仓库（files[] 结构）：软件读取仓库地址返回的 JSON，\n" +
+                    "按文件扩展名识别：\n" +
+                    "• .xipk → 插件\n" +
+                    "• .zip → 方案\n" +
+                    "每条记录的字段按上方「JSON 字段映射」取值。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = "③ 模型：使用标准 models/index.yaml 索引（模型结构特殊）。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
             )
         }
     }

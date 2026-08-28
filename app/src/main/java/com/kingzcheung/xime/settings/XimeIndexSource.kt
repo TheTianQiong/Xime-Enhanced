@@ -112,10 +112,11 @@ object XimeIndexSource {
     suspend fun fetchSchemes(context: Context, appVersion: String): Result<SchemesFetch> =
         withContext(Dispatchers.IO) {
             ensureConfigured(context)
+            val jsonMapping = loadJsonMapping(context)
             try {
                 // 遍历所有镜像，第一个成功获取到方案的返回
                 for (base in mirrors) {
-                    val result = tryFetchFromBase(base, appVersion)
+                    val result = tryFetchFromBase(base, appVersion, jsonMapping)
                     if (result != null) return@withContext Result.success(result)
                 }
                 // 全部镜像都失败
@@ -129,27 +130,40 @@ object XimeIndexSource {
 
     /**
      * 尝试从一个镜像基址获取方案列表。
-     * 新索引格式：直接抓取 rimes/index.yaml，其中 schemas 已内联所有 MarketScheme。
+     * 1) 标准 YAML 索引：rimes/index.yaml（schemas 内联所有 MarketScheme）；
+     * 2) 自定义 JSON 仓库：直接抓 base，files[] 中 .zip 条目识别为方案。
      */
-    private fun tryFetchFromBase(base: String, appVersion: String): SchemesFetch? {
-        val repoPath = "rimes/index.yaml"
+    private fun tryFetchFromBase(base: String, appVersion: String, mapping: JsonMapping): SchemesFetch? {
         val host = hostOf(base)
+        // 1. 标准 YAML 索引
         try {
-            val text = fetchTextSingle(base, repoPath) ?: return null
-            val direct = XimeIndexParser.parseDirectIndex(text)
-            val schemes = direct.schemas.distinctBy { it.id }
-                .map { XimeIndexParser.toItem(it, appVersion) }
-            Log.i(TAG, "tryFetchFromBase $host: 获取到 ${schemes.size} 个方案（扁平索引）")
-
-            if (schemes.isEmpty()) {
-                Log.w(TAG, "tryFetchFromBase $host: 0 个方案，尝试下一个镜像")
-                return null
+            val text = fetchTextSingle(base, "rimes/index.yaml")
+            if (text != null) {
+                val direct = XimeIndexParser.parseDirectIndex(text)
+                val schemes = direct.schemas.distinctBy { it.id }
+                    .map { XimeIndexParser.toItem(it, appVersion) }
+                if (schemes.isNotEmpty()) {
+                    Log.i(TAG, "tryFetchFromBase $host: 获取到 ${schemes.size} 个方案（YAML）")
+                    return SchemesFetch(schemes, host, direct.updatedAt)
+                }
             }
-            return SchemesFetch(schemes, host, direct.updatedAt)
         } catch (e: Exception) {
-            Log.w(TAG, "tryFetchFromBase $host failed: ${e.message}")
-            return null
+            Log.w(TAG, "tryFetchFromBase $host yaml failed: ${e.message}")
         }
+        // 2. 自定义 JSON 仓库（files[] 中 .zip 条目 → 方案）
+        try {
+            val jsonText = fetchTextSingle(base, "")
+            if (jsonText != null && jsonText.trimStart().startsWith("{")) {
+                val schemes = parseThirdPartyJsonSchemes(jsonText, appVersion, mapping)
+                if (schemes.isNotEmpty()) {
+                    Log.i(TAG, "tryFetchFromBase $host: 获取到 ${schemes.size} 个方案（JSON）")
+                    return SchemesFetch(schemes, host, "")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "tryFetchFromBase $host json failed: ${e.message}")
+        }
+        return null
     }
 
     /**
@@ -417,6 +431,46 @@ object XimeIndexSource {
             current = current[part] ?: return null
         }
         return current
+    }
+
+    /** 解析第三方 JSON 仓库中的方案（files[] 中 .zip 条目 → 方案列表），字段按用户映射。 */
+    private fun parseThirdPartyJsonSchemes(
+        text: String,
+        appVersion: String,
+        mapping: JsonMapping,
+    ): List<MarketSchemeItem> {
+        val root = try {
+            Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonObject
+        } catch (e: Exception) {
+            Log.w(TAG, "parseThirdPartyJsonSchemes failed: ${e.message}")
+            return emptyList()
+        }
+        val filesArray = root.resolvePath(mapping.files)?.jsonArray ?: return emptyList()
+        return filesArray.mapNotNull { el ->
+            val obj = el.jsonObject
+            val name = obj.resolvePath(mapping.name)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val url = obj.resolvePath(mapping.url)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            // 仅识别 .zip 方案包
+            if (!name.endsWith(".zip", ignoreCase = true)) return@mapNotNull null
+            val version = obj.resolvePath(mapping.version)?.jsonPrimitive?.contentOrNull ?: ""
+            val description = obj.resolvePath(mapping.description)?.jsonPrimitive?.contentOrNull ?: ""
+            val displayName = obj.resolvePath(mapping.displayName)?.jsonPrimitive?.contentOrNull ?: name
+            val tags = (obj.resolvePath(mapping.tags) as? JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val base = name.removeSuffix(".zip").removeSuffix(".ZIP")
+            val id = base.removeSuffix("-$version").ifBlank { base }
+            val scheme = MarketScheme(
+                id = id,
+                name = displayName,
+                description = description,
+                tags = tags,
+                currentVersion = version,
+                versions = listOf(
+                    SchemeVersion(version = version, downloadUrls = listOf(DownloadItem(url = url)))
+                ),
+            )
+            XimeIndexParser.toItem(scheme, appVersion)
+        }
     }
 
     /** 解析第三方 JSON 仓库（files[] → 插件列表），字段按用户映射。 */
