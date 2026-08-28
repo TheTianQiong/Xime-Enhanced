@@ -297,20 +297,6 @@ fun KeyboardView(
                 )
             }
 
-            // ── 双拼分解提示（先声母后韵母，小鹤双拼试验）──
-            val rawInputKeys = candidateState.value.inputText
-            if (XiaoheShuangpin.isFlypySchema(state.currentSchemaId) && rawInputKeys.isNotEmpty()) {
-                val parts = XiaoheShuangpin.decompose(rawInputKeys)
-                if (parts.isNotEmpty()) {
-                    ShuangpinHintBar(
-                        parts = parts,
-                        textColor = candidateTextColor,
-                        accentColor = accentColor,
-                        backgroundColor = keyBgColor.copy(alpha = 0.55f),
-                    )
-                }
-            }
-
             // ── 短信验证码快捷插入（需授予短信权限并开启「短信验证码获取」）──
             val smsContext = LocalContext.current
             LaunchedEffect(Unit) { SmsCodeStore.init(smsContext) }

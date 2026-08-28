@@ -75,6 +75,24 @@ class XiaoheShuangpinTest {
     }
 
     @Test
+    fun `双韵母键上下两排显示`() {
+        assertEquals("iang\nuang", XiaoheShuangpin.keyLabel("l", showYunmu = true))
+        assertEquals("uai\ning", XiaoheShuangpin.keyLabel("k", showYunmu = true))
+        assertEquals("iong\nong", XiaoheShuangpin.keyLabel("s", showYunmu = true))
+        assertEquals("ua\nia", XiaoheShuangpin.keyLabel("x", showYunmu = true))
+        assertEquals("uo\no", XiaoheShuangpin.keyLabel("o", showYunmu = true))
+        assertEquals("uan\ner", XiaoheShuangpin.keyLabel("r", showYunmu = true))
+        assertEquals("ui\nü", XiaoheShuangpin.keyLabel("v", showYunmu = true))
+    }
+
+    @Test
+    fun `双韵母键列表`() {
+        assertEquals(listOf("iang", "uang"), XiaoheShuangpin.yunmuListForKey("l"))
+        assertEquals(listOf("ai"), XiaoheShuangpin.yunmuListForKey("d"))
+        assertEquals(emptyList<String>(), XiaoheShuangpin.yunmuListForKey("1"))
+    }
+
+    @Test
     fun `无映射键回退原字符`() {
         assertEquals("1", XiaoheShuangpin.keyLabel("1", showYunmu = true))
         assertEquals("1", XiaoheShuangpin.keyLabel("1", showYunmu = false))

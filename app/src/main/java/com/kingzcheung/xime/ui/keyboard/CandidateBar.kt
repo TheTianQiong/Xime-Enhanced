@@ -74,6 +74,8 @@ import com.kingzcheung.xime.keyboard.OverlayRoute
 import com.kingzcheung.xime.keyboard.PanelType
 import com.kingzcheung.xime.keyboard.ToolbarAction
 import com.kingzcheung.xime.settings.SettingsPreferences
+import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
+import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 import com.kingzcheung.xime.speech.RecognitionState
 
 @Immutable
@@ -239,9 +241,18 @@ fun CandidateBar(
 
     // 编码气泡：候选栏内计算编码文本后回写此状态，供 Column 的 drawBehind 读取绘制。
     // drawBehind 在下一帧读取最新值，无需同步；初始值取自当前 state 保证首帧即显示。
-    var preeditBubbleText by remember(state) {
-        mutableStateOf((state as? CandidateBarState.ChineseCandidates)?.preeditText
-            ?: (state as? CandidateBarState.ChineseCandidates)?.inputText ?: "")
+    // 小鹤双拼方案下，气泡内直接显示「先声母后韵母」分解（如 vc → zh + ao），
+    // 输入内容显示在候选栏内、键盘整体不动（类似雾凇拼音）。
+    val shuangpinHint = LocalShuangpinKeyHint.current
+    var preeditBubbleText by remember(state, shuangpinHint.active) {
+        val cs = state as? CandidateBarState.ChineseCandidates
+        val rawInput = cs?.inputText ?: ""
+        val text = if (shuangpinHint.active && rawInput.isNotEmpty()) {
+            XiaoheShuangpin.decompose(rawInput).joinToString("　")
+        } else {
+            cs?.preeditText ?: rawInput
+        }
+        mutableStateOf(text)
     }
     val showPreeditBubble = showInputTextRow && preeditBubbleText.isNotEmpty() && !showInputBoxStyle
 
