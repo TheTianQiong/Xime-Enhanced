@@ -61,6 +61,29 @@ object XiaoheShuangpin {
     fun yunmuForKey(key: String): String? = YUNMU[key]
 
     /**
+     * 动态键面标签。
+     *
+     * 小鹤双拼一个音节 = 声母键 + 韵母键：
+     * - 输入偶数个键（含 0，即还没输入或已完成一个音节）→ 键面显示声母映射（q→q、v→zh、i→ch、u→sh）；
+     * - 输入奇数个键（已输声母，等待韵母）→ 键面切换显示韵母映射（q→iu、c→ao…）。
+     *
+     * @param showYunmu 是否显示韵母映射
+     */
+    fun keyLabel(key: String, showYunmu: Boolean): String {
+        val mapped = if (showYunmu) YUNMU[key] else SHENGMU[key]
+        return mapped ?: key
+    }
+
+    /** 是否处于"等待韵母"状态：当前输入键数（不含分隔符）为奇数。 */
+    fun shouldShowYunmu(keys: String): Boolean {
+        var n = 0
+        for (c in keys) {
+            if (c in 'a'..'z' || c in 'A'..'Z') n++
+        }
+        return n % 2 == 1
+    }
+
+    /**
      * 把键入键位分解为「声母 + 韵母」列表。
      *
      * - 按 2 键一个音节切分（小鹤双拼声母+韵母）；

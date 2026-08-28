@@ -56,4 +56,35 @@ class XiaoheShuangpinTest {
     fun `空输入返回空列表`() {
         assertEquals(emptyList<String>(), XiaoheShuangpin.decompose(""))
     }
+
+    @Test
+    fun `声母模式键面标签`() {
+        // 未输入时显示声母映射
+        assertEquals("q", XiaoheShuangpin.keyLabel("q", showYunmu = false))
+        assertEquals("zh", XiaoheShuangpin.keyLabel("v", showYunmu = false))
+        assertEquals("ch", XiaoheShuangpin.keyLabel("i", showYunmu = false))
+        assertEquals("sh", XiaoheShuangpin.keyLabel("u", showYunmu = false))
+    }
+
+    @Test
+    fun `韵母模式键面标签`() {
+        // 已输声母后显示韵母映射
+        assertEquals("iu", XiaoheShuangpin.keyLabel("q", showYunmu = true))
+        assertEquals("ao", XiaoheShuangpin.keyLabel("c", showYunmu = true))
+        assertEquals("ai", XiaoheShuangpin.keyLabel("d", showYunmu = true))
+    }
+
+    @Test
+    fun `无映射键回退原字符`() {
+        assertEquals("1", XiaoheShuangpin.keyLabel("1", showYunmu = true))
+        assertEquals("1", XiaoheShuangpin.keyLabel("1", showYunmu = false))
+    }
+
+    @Test
+    fun `奇偶键位决定是否显示韵母`() {
+        assertFalse(XiaoheShuangpin.shouldShowYunmu(""))       // 0 键 → 声母
+        assertTrue(XiaoheShuangpin.shouldShowYunmu("v"))       // 1 键（已输声母）→ 韵母
+        assertFalse(XiaoheShuangpin.shouldShowYunmu("vc"))     // 2 键（音节完成）→ 声母
+        assertTrue(XiaoheShuangpin.shouldShowYunmu("vcv"))     // 3 键（下个音节声母已输）→ 韵母
+    }
 }

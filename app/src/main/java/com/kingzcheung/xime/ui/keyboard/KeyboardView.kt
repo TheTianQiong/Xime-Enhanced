@@ -56,6 +56,8 @@ import com.kingzcheung.xime.rime.T9InputController
 import com.kingzcheung.xime.service.CandidateState
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SettingsPreferences
+import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
+import com.kingzcheung.xime.shuangpin.ShuangpinKeyHint
 import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 import com.kingzcheung.xime.sms.SmsCodeStore
 import com.kingzcheung.xime.ui.menubar.ClipboardView
@@ -664,8 +666,16 @@ fun KeyboardView(
                             is KeyboardLayoutState.T9Pinyin -> t9OnKeyPress
                             is KeyboardLayoutState.Symbol -> symbolOnKeyPress
                         }
+                        // 双拼动态键面：小鹤双拼方案下，偶数键显示声母映射、奇数键切换韵母映射
+                        val shuangpinKeyHint = remember(candidateState.value.inputText, state.currentSchemaId) {
+                            ShuangpinKeyHint(
+                                active = XiaoheShuangpin.isFlypySchema(state.currentSchemaId),
+                                showYunmu = XiaoheShuangpin.shouldShowYunmu(candidateState.value.inputText),
+                            )
+                        }
                         CompositionLocalProvider(
                             LocalSuppressCursorMove provides suppressCursorMove,
+                            LocalShuangpinKeyHint provides shuangpinKeyHint,
                         ) {
                             KeyboardLayoutScreen(
                                 keyboardState = keyboardState,

@@ -48,6 +48,8 @@ import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.settings.DisplayMode
 import com.kingzcheung.xime.settings.ButtonLayout
 import com.kingzcheung.xime.settings.KeysConfigHelper
+import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
+import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 import com.kingzcheung.xime.keyboard.GestureAction
 
 /** 半角 → 全角标点映射，中文模式下键帽显示用。提交仍走半角由 Rime 处理。 */
@@ -97,6 +99,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.TextUnit
 
 
+
+/**
+ * 字母键的键面文本：小鹤双拼方案下按当前输入状态显示声母/韵母映射。
+ *
+ * - 未激活双拼提示 / 非字母键 → 沿用 YAML 配置的标签；
+ * - 激活时偶数键显示声母映射（q→q、v→zh、i→ch、u→sh），
+ *   奇数键显示韵母映射（q→iu、c→ao…）。
+ * 仅影响显示，提交给 Rime 的键码不变。
+ */
+@Composable
+private fun effectiveKeyLabel(key: String, isAsciiMode: Boolean): String {
+    val hint = LocalShuangpinKeyHint.current
+    if (!isAsciiMode && hint.active && key.length == 1 && key[0].lowercaseChar() in 'a'..'z') {
+        return XiaoheShuangpin.keyLabel(key.lowercase(), hint.showYunmu)
+    }
+    return KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
+}
 
 @Composable
 fun KeyboardLayout(
@@ -449,7 +468,7 @@ fun KeyboardLayout(
                                     val displayText = if (isAsciiMode) {
                                         commitValue
                                     } else {
-                                        KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
+                                        effectiveKeyLabel(key, isAsciiMode)
                                     }
 
                                     val onClick = remember(key, commitValue, onKeyPress) { { onKeyPress(commitValue) } }
@@ -982,7 +1001,7 @@ fun KeyboardRowWithConfig(
             val displayText = if (isAsciiMode) {
                 commitValue
             } else {
-                KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
+                effectiveKeyLabel(key, isAsciiMode)
             }
 
             val onClick = remember(key, commitValue, onKeyPress) { { onKeyPress(commitValue) } }
@@ -2016,7 +2035,7 @@ fun CompactKeyboardRowWithConfig(
             } else {
                 rawCommitValue
             }
-            val compactDisplayText = if (isAsciiMode) commitValue else KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
+            val compactDisplayText = if (isAsciiMode) commitValue else effectiveKeyLabel(key, isAsciiMode)
             val compactOnClick = remember(key, commitValue, onKeyPress) { { onKeyPress(commitValue) } }
             val compactOnPress: (() -> Unit)? = remember(key, onKeyPressDown) { { onKeyPressDown?.invoke(key); Unit } }
             val compactOnRelease: (() -> Unit)? = remember(key, onKeyRelease) { { onKeyRelease?.invoke(key); Unit } }
