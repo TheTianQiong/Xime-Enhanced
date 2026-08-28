@@ -58,7 +58,7 @@ import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
 import com.kingzcheung.xime.shuangpin.ShuangpinKeyHint
-import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
+import com.kingzcheung.xime.shuangpin.ShuangpinSchemes
 import com.kingzcheung.xime.sms.SmsCodeStore
 import com.kingzcheung.xime.ui.menubar.ClipboardView
 import com.kingzcheung.xime.ui.menubar.PermissionManagerView
@@ -652,16 +652,18 @@ fun KeyboardView(
                             is KeyboardLayoutState.T9Pinyin -> t9OnKeyPress
                             is KeyboardLayoutState.Symbol -> symbolOnKeyPress
                         }
-                        // 双拼动态键面：小鹤双拼方案下，偶数键显示声母映射、奇数键切换韵母映射；
-                        // 可通过设置「外观与交互 → 双拼提示」开关关闭
+                        // 双拼动态键面：双拼方案下，偶数键显示声母映射、奇数键切换韵母映射；
+                        // 方案由 schema 自动检测（小鹤/自然码/微软…）；可通过「外观与交互 → 双拼提示」关闭
                         val hintContext = LocalContext.current
                         val shuangpinHintEnabled = SettingsPreferences.isShuangpinHintEnabled(hintContext)
+                        val detectedScheme = ShuangpinSchemes.detect(state.currentSchemaId)
                         val shuangpinKeyHint = remember(
                             candidateState.value.inputText, state.currentSchemaId, shuangpinHintEnabled
                         ) {
                             ShuangpinKeyHint(
-                                active = shuangpinHintEnabled && XiaoheShuangpin.isFlypySchema(state.currentSchemaId),
-                                showYunmu = XiaoheShuangpin.shouldShowYunmu(candidateState.value.inputText),
+                                active = shuangpinHintEnabled && detectedScheme != null,
+                                showYunmu = ShuangpinSchemes.shouldShowYunmu(candidateState.value.inputText),
+                                scheme = detectedScheme,
                             )
                         }
                         CompositionLocalProvider(
@@ -997,6 +999,7 @@ fun KeyboardView(
                         keyBgColor = keyBgColor,
                         onBack = { viewModel.closeOverlay() },
                         bottomPaddingDp = state.keyboardBottomPaddingDp,
+                        scheme = ShuangpinSchemes.detect(state.currentSchemaId) ?: ShuangpinSchemes.FLYPY,
                         modifier = Modifier.fillMaxWidth().fillMaxHeight()
                     )
                     is OverlayRoute.Edit -> {

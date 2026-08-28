@@ -30,13 +30,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
+import com.kingzcheung.xime.shuangpin.ShuangpinScheme
+import com.kingzcheung.xime.shuangpin.ShuangpinSchemes
 
 /**
  * IME 目录菜单中的「双拼对照」参考面板。
  *
- * 当前内置小鹤双拼（xiaohe）键位表，分「声母 / 韵母」两组展示（先声母、后韵母），
- * 便于双拼方案用户对照按键。后续可扩展更多双拼方案并随当前方案自动切换。
+ * 展示当前检测到的双拼方案键位表（分「声母 / 韵母」两组，先声母、后韵母），
+ * 缺省为小鹤双拼；双韵母键以 "iang/uang" 形式显示。
  */
 @Composable
 fun ShuangpinReferenceView(
@@ -46,6 +47,7 @@ fun ShuangpinReferenceView(
     keyBgColor: Color,
     onBack: () -> Unit,
     bottomPaddingDp: Int = 0,
+    scheme: ShuangpinScheme = ShuangpinSchemes.FLYPY,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -82,7 +84,7 @@ fun ShuangpinReferenceView(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "双拼对照（小鹤）",
+                text = "双拼对照（${scheme.displayName}）",
                 color = keyTextColor,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
@@ -98,11 +100,11 @@ fun ShuangpinReferenceView(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "小鹤双拼键位表：先按声母键，再按韵母键，两键即可输入一个音节。",
+                text = "${scheme.displayName}键位表：先按声母键，再按韵母键，两键即可输入一个音节。",
                 color = keyTextColor.copy(alpha = 0.6f),
                 fontSize = 12.sp,
             )
-            XiaoheShuangpin.groups.forEach { group ->
+            scheme.groups().forEach { group ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

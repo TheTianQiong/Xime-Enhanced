@@ -75,7 +75,6 @@ import com.kingzcheung.xime.keyboard.PanelType
 import com.kingzcheung.xime.keyboard.ToolbarAction
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
-import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 import com.kingzcheung.xime.speech.RecognitionState
 
 @Immutable
@@ -248,7 +247,7 @@ fun CandidateBar(
         val cs = state as? CandidateBarState.ChineseCandidates
         val rawInput = cs?.inputText ?: ""
         val text = if (shuangpinHint.active && rawInput.isNotEmpty()) {
-            XiaoheShuangpin.decompose(rawInput).joinToString("　")
+            shuangpinHint.scheme?.decompose(rawInput)?.joinToString("　") ?: rawInput
         } else {
             cs?.preeditText ?: rawInput
         }

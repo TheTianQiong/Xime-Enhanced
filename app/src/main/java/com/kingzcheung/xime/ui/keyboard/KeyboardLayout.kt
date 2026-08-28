@@ -49,7 +49,6 @@ import com.kingzcheung.xime.settings.DisplayMode
 import com.kingzcheung.xime.settings.ButtonLayout
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
-import com.kingzcheung.xime.shuangpin.XiaoheShuangpin
 import com.kingzcheung.xime.keyboard.GestureAction
 
 /** 半角 → 全角标点映射，中文模式下键帽显示用。提交仍走半角由 Rime 处理。 */
@@ -111,8 +110,9 @@ import androidx.compose.ui.unit.TextUnit
 @Composable
 private fun effectiveKeyLabel(key: String, isAsciiMode: Boolean): String {
     val hint = LocalShuangpinKeyHint.current
-    if (!isAsciiMode && hint.active && key.length == 1 && key[0].lowercaseChar() in 'a'..'z') {
-        return XiaoheShuangpin.keyLabel(key.lowercase(), hint.showYunmu)
+    val scheme = hint.scheme
+    if (!isAsciiMode && hint.active && scheme != null && key.length == 1 && key[0].lowercaseChar() in 'a'..'z') {
+        return scheme.keyLabel(key.lowercase(), hint.showYunmu)
     }
     return KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
 }
