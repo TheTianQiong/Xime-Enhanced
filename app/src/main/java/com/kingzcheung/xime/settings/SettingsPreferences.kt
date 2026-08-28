@@ -636,6 +636,11 @@ object SettingsPreferences {
     private const val KEY_STORE_REPO_PRESET = "store_repo_preset"
     private const val KEY_STORE_REPO_URL = "store_repo_url"
     private const val KEY_GITHUB_ACCEL = "github_accel"
+    private const val KEY_STORE_JSON_MAPPING = "store_json_mapping"
+
+    /** 第三方 JSON 仓库默认字段映射（可自定义，路径用 . 分隔，如 extra.DisplayName）。 */
+    const val DEFAULT_STORE_JSON_MAPPING =
+        """{"files":"files","name":"name","version":"version","url":"url","description":"description","displayName":"extra.DisplayName","tags":"extra.Tag"}"""
 
     const val STORE_REPO_OFFICIAL = "official"
     const val STORE_REPO_CUSTOM = "custom"
@@ -667,6 +672,16 @@ object SettingsPreferences {
 
     fun setGithubAccelPrefix(context: Context, prefix: String) {
         getPrefs(context).edit().putString(KEY_GITHUB_ACCEL, prefix.trim().trimEnd('/')).apply()
+    }
+
+    /** 第三方 JSON 仓库的字段映射（JSON 字符串；留空/非法回退默认映射）。 */
+    fun getStoreJsonMapping(context: Context): String {
+        return getPrefs(context).getString(KEY_STORE_JSON_MAPPING, DEFAULT_STORE_JSON_MAPPING)
+            ?: DEFAULT_STORE_JSON_MAPPING
+    }
+
+    fun setStoreJsonMapping(context: Context, mapping: String) {
+        getPrefs(context).edit().putString(KEY_STORE_JSON_MAPPING, mapping.trim()).apply()
     }
 
     // ── 短信验证码 ──

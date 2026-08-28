@@ -5,11 +5,13 @@ import android.util.Log
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -160,6 +162,7 @@ object XimeIndexSource {
         installedVersions: Map<String, String>,
     ): Result<PluginsFetch> = withContext(Dispatchers.IO) {
         ensureConfigured(context)
+        val jsonMapping = loadJsonMapping(context)
         try {
             for (base in mirrors) {
                 val host = hostOf(base)
@@ -183,7 +186,7 @@ object XimeIndexSource {
                 try {
                     val jsonText = fetchTextSingle(base, "")
                     if (jsonText != null && jsonText.trimStart().startsWith("{")) {
-                        val plugins = parseThirdPartyJsonPlugins(jsonText, appVersion, installedVersions)
+                        val plugins = parseThirdPartyJsonPlugins(jsonText, appVersion, installedVersions, jsonMapping)
                         if (plugins.isNotEmpty()) {
                             return@withContext Result.success(PluginsFetch(plugins, host, ""))
                         }
@@ -373,49 +376,83 @@ object XimeIndexSource {
         InstallResult(success = true, unresolvedDeps = result.unresolvedDeps)
     }
 
-    // ================= 第三方 JSON 仓库（?format=json 的 files[] 结构） =================
+    // ================= 第三方 JSON 仓库（字段映射可自定义，?format=json 的 files[] 结构） =================
 
-    @Serializable
-    private data class ThirdPartyRepo(
-        val files: List<ThirdPartyFile> = emptyList(),
+    /** 第三方 JSON 字段映射（路径用 . 分隔，如 extra.DisplayName）。 */
+    private data class JsonMapping(
+        val files: String = "files",
+        val name: String = "name",
+        val version: String = "version",
+        val url: String = "url",
+        val description: String = "description",
+        val displayName: String = "extra.DisplayName",
+        val tags: String = "extra.Tag",
     )
 
-    @Serializable
-    private data class ThirdPartyFile(
-        val name: String = "",
-        val version: String = "",
-        val url: String = "",
-        val description: String = "",
-        val extra: JsonObject = JsonObject(emptyMap()),
-    )
+    /** 从设置解析字段映射；非法时回退默认。 */
+    private fun loadJsonMapping(context: Context): JsonMapping {
+        val raw = SettingsPreferences.getStoreJsonMapping(context)
+        return try {
+            val obj = Json { ignoreUnknownKeys = true }.parseToJsonElement(raw).jsonObject
+            JsonMapping(
+                files = obj["files"]?.jsonPrimitive?.contentOrNull ?: "files",
+                name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "name",
+                version = obj["version"]?.jsonPrimitive?.contentOrNull ?: "version",
+                url = obj["url"]?.jsonPrimitive?.contentOrNull ?: "url",
+                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "description",
+                displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: "extra.DisplayName",
+                tags = obj["tags"]?.jsonPrimitive?.contentOrNull ?: "extra.Tag",
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "loadJsonMapping failed: ${e.message}")
+            JsonMapping()
+        }
+    }
 
-    /** 解析第三方 JSON 仓库（files[] → 插件列表）。 */
+    /** 按点分路径从 JsonObject 解析元素（如 "extra.DisplayName"）。 */
+    private fun JsonObject.resolvePath(path: String): JsonElement? {
+        var current: JsonElement = this
+        for (part in path.split(".").filter { it.isNotBlank() }) {
+            if (current !is JsonObject) return null
+            current = current[part] ?: return null
+        }
+        return current
+    }
+
+    /** 解析第三方 JSON 仓库（files[] → 插件列表），字段按用户映射。 */
     private fun parseThirdPartyJsonPlugins(
         text: String,
         appVersion: String,
         installedVersions: Map<String, String>,
+        mapping: JsonMapping,
     ): List<MarketPluginItem> {
-        val repo = try {
-            Json { ignoreUnknownKeys = true }.decodeFromString<ThirdPartyRepo>(text)
+        val root = try {
+            Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonObject
         } catch (e: Exception) {
             Log.w(TAG, "parseThirdPartyJsonPlugins failed: ${e.message}")
             return emptyList()
         }
-        return repo.files.mapNotNull { f ->
-            if (f.name.isBlank() || f.url.isBlank()) return@mapNotNull null
-            val displayName = f.extra["DisplayName"]?.jsonPrimitive?.contentOrNull ?: f.name
-            val tags = f.extra["Tag"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
-            val base = f.name.removeSuffix(".xipk")
-            val id = base.removeSuffix("-${f.version}").ifBlank { base }
+        val filesArray = root.resolvePath(mapping.files)?.jsonArray ?: return emptyList()
+        return filesArray.mapNotNull { el ->
+            val obj = el.jsonObject
+            val name = obj.resolvePath(mapping.name)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val url = obj.resolvePath(mapping.url)?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val version = obj.resolvePath(mapping.version)?.jsonPrimitive?.contentOrNull ?: ""
+            val description = obj.resolvePath(mapping.description)?.jsonPrimitive?.contentOrNull ?: ""
+            val displayName = obj.resolvePath(mapping.displayName)?.jsonPrimitive?.contentOrNull ?: name
+            val tags = (obj.resolvePath(mapping.tags) as? JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val base = name.removeSuffix(".xipk")
+            val id = base.removeSuffix("-$version").ifBlank { base }
             val plugin = MarketPlugin(
                 id = id,
                 name = displayName,
-                description = f.description,
+                description = description,
                 type = "remote",
                 tags = tags,
-                currentVersion = f.version,
+                currentVersion = version,
                 versions = listOf(
-                    PluginVersion(version = f.version, downloadUrls = listOf(DownloadItem(url = f.url)))
+                    PluginVersion(version = version, downloadUrls = listOf(DownloadItem(url = url)))
                 ),
             )
             XimeIndexParser.toPluginItem(plugin, appVersion, installedVersions)

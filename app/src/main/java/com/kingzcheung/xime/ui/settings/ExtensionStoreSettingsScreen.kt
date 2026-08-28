@@ -43,6 +43,7 @@ fun ExtensionStoreSettingsScreen(
     var preset by remember { mutableStateOf(SettingsPreferences.getStoreRepoPreset(context)) }
     var repoUrl by remember { mutableStateOf(SettingsPreferences.getStoreRepoUrl(context)) }
     var accel by remember { mutableStateOf(SettingsPreferences.getGithubAccelPrefix(context)) }
+    var jsonMapping by remember { mutableStateOf(SettingsPreferences.getStoreJsonMapping(context)) }
 
     fun selectPreset(p: String) {
         preset = p
@@ -164,6 +165,36 @@ fun ExtensionStoreSettingsScreen(
                     Text("仅对 github.com 下载链接生效；留空则直连。")
                 },
                 singleLine = true,
+            )
+
+            Text(
+                text = "第三方 JSON 字段映射（高级）",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+            )
+            OutlinedTextField(
+                value = jsonMapping,
+                onValueChange = {
+                    jsonMapping = it
+                    SettingsPreferences.setStoreJsonMapping(context, it)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
+                label = { Text("JSON 字段映射") },
+                supportingText = {
+                    Text("路径用 . 分隔，如 extra.DisplayName。适配不同第三方仓库格式。")
+                },
+                minLines = 5,
+                maxLines = 9,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "默认：{\"files\":\"files\",\"name\":\"name\",\"version\":\"version\",\"url\":\"url\",\"description\":\"description\",\"displayName\":\"extra.DisplayName\",\"tags\":\"extra.Tag\"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
             )
         }
     }
