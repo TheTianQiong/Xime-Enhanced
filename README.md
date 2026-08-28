@@ -23,12 +23,14 @@ This is **Xime-Enhanced**, an enhanced fork of Xime with the following additions
 | 🎤 **AIDL Voice Input (bibi/说点啥)** | Voice-to-text through the `host.ipc` AIDL bridge: Xime records PCM and pushes it to [说点啥 / bibi keyboard](https://github.com/brycewg/asr-keyboard) (`com.brycewg.asrkb`) via its `ExternalSpeechService`. Bundled `asrkb-bridge` plugin (push-PCM mode, onPartial live preview, onFinal commit). | 插件管理 → 启用 `bibi 语音输入（AIDL）`；需在说点啥中开启「外部输入法联动」 |
 | 📩 **SMS Verification Code** | Reads incoming SMS, extracts the 4-6 digit verification code locally (regex, never uploaded), shows a quick-insert bar above the candidates (tap to commit into the focused field), and can auto-copy it to the clipboard. | 目录菜单 / 设置 → 管理权限 |
 | 🔐 **Manage Permissions** | A dedicated entry (both in the IME menu and in Settings) to view and grant/revoke runtime permissions such as Microphone and SMS, plus toggles for the SMS-code feature and auto-copy. | 目录菜单 → 管理权限；设置 → 扩展 → 管理权限 |
+| 🔤 **Shuangpin Decomposition** | Live "initial + final" decomposition hint above the candidates for Xiaohe Shuangpin (e.g. typing `vc` shows `zh + ao`), plus a full key-map reference panel. Works with [rime-ice-Xime](https://github.com/TheTianQiong/rime-ice-Xime). | 目录菜单 → 双拼对照；小鹤双拼方案自动显示 |
 
 > **Privacy**: SMS content is parsed only on-device and is never uploaded. Granting the SMS permission is opt-in and can be revoked anytime via **管理权限**.
 
 ## Changelog (Enhanced)
 
 - `2.7.2-enhanced` — Initial enhanced release: AIDL voice input (bibi/说点啥) via `host.ipc` bridge + `asrkb-bridge` plugin; SMS verification-code quick-insert & auto-copy; "Manage permissions" entry in both the IME menu and Settings.
+- `2.7.2-enhanced.2` — SMS code as a plugin (`sms-code`) with a configurable extraction regex; Shuangpin reference panel (Xiaohe) + live "initial then final" decomposition; `.xipk`/`.yaml` file association for one-tap import.
 
 ---
 
