@@ -318,7 +318,8 @@ fun KeyButton(
             fontSize = fontSize ?: if (text.length > 2) 14.sp else 16.sp,
             fontWeight = if (text.length > 2) FontWeight.Medium else FontWeight.Normal,
             textAlign = TextAlign.Center,
-            maxLines = 1
+            // 双韵母键面（如 "iang\nuang"）允许两行显示；普通键面仍单行
+            maxLines = if (text.contains('\n')) 2 else 1
         )
         
         if (!swipeText.isNullOrEmpty()) {
@@ -739,7 +740,8 @@ fun SwipeableKeyButton(
                     fontSize = if (fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) fontSize else if (text.length > 2) 14.sp else 18.sp,
                     fontWeight = if (text.length > 2) FontWeight.Medium else FontWeight.Normal,
                     textAlign = TextAlign.Center,
-                    maxLines = 1
+                    // 双韵母键面（如 "iang\nuang"）允许两行显示；普通键面仍单行
+                    maxLines = if (text.contains('\n')) 2 else 1
                 )
             }
 

@@ -75,14 +75,14 @@ class XiaoheShuangpinTest {
     }
 
     @Test
-    fun `双韵母键显示主韵母单行`() {
-        assertEquals("ue", XiaoheShuangpin.keyLabel("t", showYunmu = true))
-        assertEquals("o", XiaoheShuangpin.keyLabel("o", showYunmu = true))
-        assertEquals("ong", XiaoheShuangpin.keyLabel("s", showYunmu = true))
-        assertEquals("uai", XiaoheShuangpin.keyLabel("k", showYunmu = true))
-        assertEquals("iang", XiaoheShuangpin.keyLabel("l", showYunmu = true))
-        assertEquals("ia", XiaoheShuangpin.keyLabel("x", showYunmu = true))
-        assertEquals("ui", XiaoheShuangpin.keyLabel("v", showYunmu = true))
+    fun `双韵母键上下两排显示`() {
+        assertEquals("ue\nve", XiaoheShuangpin.keyLabel("t", showYunmu = true))
+        assertEquals("o\nuo", XiaoheShuangpin.keyLabel("o", showYunmu = true))
+        assertEquals("ong\niong", XiaoheShuangpin.keyLabel("s", showYunmu = true))
+        assertEquals("uai\ning", XiaoheShuangpin.keyLabel("k", showYunmu = true))
+        assertEquals("iang\nuang", XiaoheShuangpin.keyLabel("l", showYunmu = true))
+        assertEquals("ia\nua", XiaoheShuangpin.keyLabel("x", showYunmu = true))
+        assertEquals("ui\nv", XiaoheShuangpin.keyLabel("v", showYunmu = true))
     }
 
     @Test

@@ -35,7 +35,7 @@ class ShuangpinSchemesTest {
         assertEquals("en", ziranma.keyLabel("w", showYunmu = true))
         assertEquals("eng", ziranma.keyLabel("t", showYunmu = true))
         assertEquals("un", ziranma.keyLabel("m", showYunmu = true))
-        assertEquals("er", ziranma.keyLabel("j", showYunmu = true))
+        assertEquals("er\niu", ziranma.keyLabel("j", showYunmu = true))
     }
 
     @Test
@@ -45,8 +45,8 @@ class ShuangpinSchemesTest {
         assertEquals("ch", mspy.shengmuForKey("i"))
         assertEquals("sh", mspy.shengmuForKey("u"))
         assertEquals("iu", mspy.keyLabel("q", showYunmu = true))
-        assertEquals("er", mspy.keyLabel("r", showYunmu = true))
-        assertEquals("ong", mspy.keyLabel("s", showYunmu = true))
+        assertEquals("er\nuan", mspy.keyLabel("r", showYunmu = true))
+        assertEquals("ong\niong", mspy.keyLabel("s", showYunmu = true))
     }
 
     @Test
@@ -57,7 +57,7 @@ class ShuangpinSchemesTest {
         assertEquals("sh", abc.shengmuForKey("v"))
         assertEquals("ei", abc.keyLabel("q", showYunmu = true))
         assertEquals("ing", abc.keyLabel("y", showYunmu = true))
-        assertEquals("ue", abc.keyLabel("m", showYunmu = true))
+        assertEquals("ue\nve\nui", abc.keyLabel("m", showYunmu = true))
     }
 
     @Test
@@ -67,7 +67,7 @@ class ShuangpinSchemesTest {
         assertEquals("ch", jiajia.shengmuForKey("u"))
         assertEquals("sh", jiajia.shengmuForKey("i"))
         assertEquals("iu", jiajia.keyLabel("n", showYunmu = true))
-        assertEquals("er", jiajia.keyLabel("q", showYunmu = true))
+        assertEquals("er\ning", jiajia.keyLabel("q", showYunmu = true))
     }
 
     @Test
@@ -78,6 +78,6 @@ class ShuangpinSchemesTest {
         assertEquals("ch", tongyong.shengmuForKey("i"))
         assertEquals("sh", tongyong.shengmuForKey("u"))
         assertEquals("iu", tongyong.keyLabel("q", showYunmu = true))
-        assertEquals("ing", tongyong.keyLabel("y", showYunmu = true))
+        assertEquals("ing\nuai", tongyong.keyLabel("y", showYunmu = true))
     }
 }
