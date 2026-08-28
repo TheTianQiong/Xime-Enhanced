@@ -23,10 +23,55 @@ class ShuangpinScheme(
     /** 第二键 → 韵母列表。 */
     fun yunmuListForKey(key: String): List<String> = yunmu[key] ?: emptyList()
 
-    /** 动态键面标签：偶数键显示声母映射，奇数键（已输声母）显示韵母映射（双韵母键用 \n 两行显示）。 */
+    /** 动态键面标签：偶数键显示声母映射，奇数键（已输声母）显示韵母映射（双韵母键用 \n 两行显示，三韵母键用括号合并为两行）。 */
     fun keyLabel(key: String, showYunmu: Boolean): String {
         if (!showYunmu) return shengmu[key] ?: key
-        return yunmuListForKey(key).joinToString("\n").ifEmpty { key }
+        val yunmuList = yunmuListForKey(key)
+        if (yunmuList.isEmpty()) return key
+        if (yunmuList.size <= 2) return yunmuList.joinToString("\n")
+        // 键面最多两行：把仅差一字的相近韵母合并为 u(v)e，多余项并入第二行括号
+        val groups = compactYunmu(yunmuList)
+        val first = groups.first()
+        return when (groups.size) {
+            1 -> first
+            2 -> "$first\n${groups[1]}"
+            else -> "$first\n${groups.drop(1).joinToString("/") { "($it)" }}"
+        }
+    }
+
+    /** 把仅相差一个字符的相邻韵母合并为「u(v)e」紧凑写法（如 ue/ve → u(v)e）。 */
+    private fun compactYunmu(yunmuList: List<String>): List<String> {
+        val groups = mutableListOf<String>()
+        var i = 0
+        while (i < yunmuList.size) {
+            val cur = yunmuList[i]
+            if (i + 1 < yunmuList.size && differByOneChar(cur, yunmuList[i + 1])) {
+                groups.add(mergeTwo(cur, yunmuList[i + 1]))
+                i += 2
+            } else {
+                groups.add(cur)
+                i += 1
+            }
+        }
+        return groups
+    }
+
+    private fun differByOneChar(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var diff = 0
+        for (j in a.indices) {
+            if (a[j] != b[j]) diff++
+        }
+        return diff == 1
+    }
+
+    private fun mergeTwo(a: String, b: String): String {
+        for (j in a.indices) {
+            if (a[j] != b[j]) {
+                return a.substring(0, j) + a[j] + "(" + b[j] + ")" + a.substring(j + 1)
+            }
+        }
+        return a
     }
 
     /** 把键入键位分解为「声母 + 韵母」列表。 */

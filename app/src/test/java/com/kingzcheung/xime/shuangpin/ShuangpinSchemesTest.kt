@@ -36,6 +36,8 @@ class ShuangpinSchemesTest {
         assertEquals("eng", ziranma.keyLabel("t", showYunmu = true))
         assertEquals("un", ziranma.keyLabel("m", showYunmu = true))
         assertEquals("er\niu", ziranma.keyLabel("j", showYunmu = true))
+        // 三韵母键 n→ue/ve/ui 用括号合并为两行
+        assertEquals("u(v)e\nui", ziranma.keyLabel("n", showYunmu = true))
     }
 
     @Test
@@ -57,7 +59,8 @@ class ShuangpinSchemesTest {
         assertEquals("sh", abc.shengmuForKey("v"))
         assertEquals("ei", abc.keyLabel("q", showYunmu = true))
         assertEquals("ing", abc.keyLabel("y", showYunmu = true))
-        assertEquals("ue\nve\nui", abc.keyLabel("m", showYunmu = true))
+        // 三韵母键 m→ue/ve/ui 用括号合并为两行
+        assertEquals("u(v)e\nui", abc.keyLabel("m", showYunmu = true))
     }
 
     @Test
@@ -68,6 +71,8 @@ class ShuangpinSchemesTest {
         assertEquals("sh", jiajia.shengmuForKey("i"))
         assertEquals("iu", jiajia.keyLabel("n", showYunmu = true))
         assertEquals("er\ning", jiajia.keyLabel("q", showYunmu = true))
+        // 三韵母键 x→ue/ve/uai 用括号合并为两行
+        assertEquals("u(v)e\nuai", jiajia.keyLabel("x", showYunmu = true))
     }
 
     @Test
