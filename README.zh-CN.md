@@ -1,3 +1,5 @@
+# 本项目为Xime加强版，属于非官方的项目，添加了一些官方版本不包含的功能。如介意，请移步官方项目[ximeiorg/Xime](https://github.com/ximeiorg/Xime)！
+# This project is an enhanced version of Xime and is an unofficial project. It adds some features not included in the official version. If you mind, please go to the official project [ximeiorg/Xime](https://github.com/ximeiorg/Xime)!
 <p align="center">
   <img src="docs/logo.jpg" alt="Xime Logo" width="600">
 </p>
@@ -24,7 +26,7 @@
 | :--- | :--- | :--- |
 | 🎤 **AIDL 语音输入（bibi/说点啥）** | 通过 `host.ipc` AIDL 桥实现语音转文字：Xime 录音并推流 PCM 给说点啥 / bibi 键盘（`com.brycewg.asrkb`）的 `ExternalSpeechService`。内置 `asrkb-bridge` 插件（推送 PCM 模式，onPartial 实时预览、onFinal 上屏）。 | 插件管理 → 启用「bibi 语音输入（AIDL）」；需在说点啥开启「外部输入法联动」 |
 | 📩 **短信验证码** | 读取短信并在本地提取 4-6 位验证码（正则，绝不上传），候选栏上方快捷插入条一键上屏，可自动复制到剪贴板；可通过 sms-code 插件配置自定义提取正则。 | 目录菜单 / 设置 → 管理权限 |
-| 🔤 **双拼提示（多方案）** | 小鹤 / 通用 / 自然码 / 微软 / 智能ABC / 搜狗 / 加加双拼方案的动态键面（声母↔韵母）、候选栏「先声母后韵母」分解与键位对照面板；双韵母键上下两排显示。可配合 rime-ice-Xime 使用。 | 设置 → 外观与交互 → 双拼提示；目录菜单 → 双拼对照 |
+| 🔤 **双拼提示（多方案）** | 小鹤 / 通用 / 自然码 / 微软 / 智能ABC / 搜狗 / 加加双拼方案的动态键面（声母↔韵母）、候选栏「先声母后韵母」分解与键位对照面板；双韵母键上下两排显示。可配合 rime-ice 使用。 | 设置 → 外观与交互 → 双拼提示；目录菜单 → 双拼对照 |
 | 🔐 **管理权限** | 目录菜单与设置页双入口，管理麦克风/短信等运行时权限与短信验证码、自动复制开关。 | 目录菜单 → 管理权限；设置 → 扩展 → 管理权限 |
 | 📂 **.xipk 文件关联** | 浏览器/文件管理器直接打开 `.xipk` 插件或 `.yaml` 方案文件即可一键导入。 | 打开方式选择曦码 |
 
