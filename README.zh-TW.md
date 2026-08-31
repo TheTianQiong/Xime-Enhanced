@@ -1,3 +1,5 @@
+# 本專案為Xime加強版，屬於非官方的專案，新增了一些官方版本不包含的功能。如介意，請移步官方專案[ximeiorg/Xime](https://github.com/ximeiorg/Xime)！
+# This project is an enhanced version of Xime and is an unofficial project. It adds some features not included in the official version. If you mind, please go to the official project [ximeiorg/Xime](https://github.com/ximeiorg/Xime)!
 <p align="center">
   <img src="docs/logo.jpg" alt="Xime Logo" width="600">
 </p>
@@ -24,7 +26,7 @@
 | :--- | :--- | :--- |
 | 🎤 **AIDL 語音輸入（bibi/說點啥）** | 透過 `host.ipc` AIDL 橋實現語音轉文字：Xime 錄音並推送 PCM 給說點啥 / bibi 鍵盤（`com.brycewg.asrkb`）的 `ExternalSpeechService`。內建 `asrkb-bridge` 外掛（推送 PCM 模式，onPartial 即時預覽、onFinal 上屏）。 | 外掛管理 → 啟用「bibi 語音輸入（AIDL）」；需在說點啥開啟「外部輸入法聯動」 |
 | 📩 **簡訊驗證碼** | 讀取簡訊並在本機提取 4-6 位驗證碼（正規表示式，絕不上傳），候選欄上方快捷插入條一鍵上屏，可自動複製到剪貼簿；可透過 sms-code 外掛設定自訂提取正規表示式。 | 目錄選單 / 設定 → 管理權限 |
-| 🔤 **雙拼提示（多方案）** | 小鶴 / 通用 / 自然碼 / 微軟 / 智慧ABC / 搜狗 / 加加雙拼方案的動態鍵面（聲母↔韻母）、候選欄「先聲母後韻母」分解與鍵位對照面板；雙韻母鍵上下兩排顯示。可搭配 rime-ice-Xime 使用。 | 設定 → 外觀與互動 → 雙拼提示；目錄選單 → 雙拼對照 |
+| 🔤 **雙拼提示（多方案）** | 小鶴 / 通用 / 自然碼 / 微軟 / 智慧ABC / 搜狗 / 加加雙拼方案的動態鍵面（聲母↔韻母）、候選欄「先聲母後韻母」分解與鍵位對照面板；雙韻母鍵上下兩排顯示。可搭配 rime-ice 使用。 | 設定 → 外觀與互動 → 雙拼提示；目錄選單 → 雙拼對照 |
 | 🔐 **管理權限** | 目錄選單與設定頁雙入口，管理麥克風/簡訊等執行時期權限與簡訊驗證碼、自動複製開關。 | 目錄選單 → 管理權限；設定 → 擴充 → 管理權限 |
 | 📂 **.xipk 檔案關聯** | 瀏覽器/檔案管理員直接開啟 `.xipk` 外掛或 `.yaml` 方案檔案即可一鍵匯入。 | 開啟方式選擇曦碼 |
 
