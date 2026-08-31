@@ -46,6 +46,13 @@ object PluginManager {
     @Volatile
     var httpHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.http.HttpHostApi)? = null
 
+    /**
+     * 宿主 SSE 流式 HTTP 白名单 API 提供者（app 层注入，AI 长文本流式生成等插件使用）。
+     * 工厂参数为插件 id，宿主据此校验域名白名单与用户授权（同 httpHostApiFactory）。
+     */
+    @Volatile
+    var sseHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.http.SseHostApi)? = null
+
     /** 宿主加密/编码原语提供者（S3 SigV4 签名等，app 层注入）。 */
     @Volatile
     var cryptoHostApiFactory: (() -> com.kingzcheung.xime.plugin.core.lua.crypto.CryptoHostApi)? = null
@@ -162,6 +169,22 @@ object PluginManager {
         return requireContext().xmlManager.getAllPlugins()
     }
 
+    /**
+     * 向所有运行实例广播下行事件。
+     * 实际投递取决于插件是否声明了对应 `capabilities.events`，未声明/未启用通道的实例静默跳过。
+     *
+     * @return 成功投递（进入通道）的实例数。
+     */
+    fun dispatchEvent(event: com.kingzcheung.xime.plugin.core.lua.PluginEvent): Int {
+        val context = frameworkContext ?: return 0
+        var delivered = 0
+        for ((_, loaded) in context.loadedPlugins) {
+            val runtime = loaded.script ?: continue
+            if (runtime.dispatchEvent(event)) delivered++
+        }
+        return delivered
+    }
+
     /** 判断插件是否兼容当前主应用版本（宿主侧读取自身版本）。 */
     fun isPluginHostCompatible(plugin: PluginInfo): Boolean {
         val hostVersion = com.kingzcheung.xime.plugin.core.util.VersionUtil.getHostVersionName(requireContext().application)
@@ -177,6 +200,10 @@ object PluginManager {
             val updatedPluginInfo = pluginInfo.copy(enabled = enabled)
             requireContext().xmlManager.updatePlugin(updatedPluginInfo)
             requireContext().xmlManager.flushToDisk()
+            if (!enabled) {
+                // 禁用时同步卸载运行中实例，避免插件继续后台运行（网络会话/剪贴板监听）
+                unloadPlugin(pluginId)
+            }
             true
         } catch (e: Exception) {
             false
@@ -214,7 +241,7 @@ object PluginManager {
             Log.d(TAG, "Found ${assetFiles.size} files in assets/$assetsDir: ${assetFiles.toList()}")
             
             for (fileName in assetFiles) {
-                if (fileName.endsWith(".xipk") || fileName.endsWith(".apk")) {
+                if (fileName.endsWith(".xipk")) {
                     val assetPath = "$assetsDir/$fileName"
                     Log.d(TAG, "Installing: $assetPath")
                     if (installPluginFromAssets(assetPath, forceOverwrite = true)) {

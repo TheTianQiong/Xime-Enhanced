@@ -48,27 +48,8 @@ local audioReady = false
 local seq = 1
 local prebuffer = {}
 
--- ================= 元信息 =================
-
-function plugin.getProviderId()
-    return "volc"
-end
-
-function plugin.getDisplayName()
-    return "火山引擎流式语音识别"
-end
-
 function plugin.getIcon()
     return { assetName = "icon.png" }
-end
-
-function plugin.getCapabilities()
-    return {
-        inputMode = "streaming",
-        supportsPartialResults = true,
-        maxRecordDurationMillis = 10 * 60 * 1000,
-        requiresNetwork = true,
-    }
 end
 
 function plugin.isConfigured()
@@ -341,10 +322,6 @@ function plugin.cancel()
     audioReady = false
     seq = 1
     prebuffer = {}
-end
-
-function plugin.getState()
-    return 0
 end
 
 return plugin

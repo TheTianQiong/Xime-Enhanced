@@ -11,13 +11,21 @@ import androidx.navigation.navArgument
 @Composable
 fun SettingsScreen(
     initialRoute: String? = null,
+    initialPluginId: String? = null,
     onThemeChanged: () -> Unit = {},
     onWizardBack: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val startDestination = if (initialRoute == "manage_dict") SettingsRoutes.Dictionary
     else if (initialRoute == "schema") SettingsRoutes.Schema
+    else if (initialRoute == "plugins") SettingsRoutes.Plugins
     else SettingsRoutes.Main
+
+    LaunchedEffect(initialPluginId) {
+        if (initialPluginId != null) {
+            navController.navigate("plugin_market_detail/$initialPluginId")
+        }
+    }
     
     NavHost(
         navController = navController,
@@ -202,7 +210,8 @@ fun SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onNavigateToPrivacy = { navController.navigate(SettingsRoutes.Privacy) },
                 onNavigateToLicenses = { navController.navigate(SettingsRoutes.Licenses) },
-                onNavigateToLogViewer = { navController.navigate(SettingsRoutes.LogViewer) }
+                onNavigateToLogViewer = { navController.navigate(SettingsRoutes.LogViewer) },
+                onNavigateToHandwritingCapture = { navController.navigate(SettingsRoutes.HandwritingCapture) }
             )
         }
         composable(SettingsRoutes.MarketModel) {
@@ -224,6 +233,11 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.LogViewer) {
             LogViewerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(SettingsRoutes.HandwritingCapture) {
+            HandwritingCaptureScreen(
                 onBack = { navController.popBackStack() }
             )
         }

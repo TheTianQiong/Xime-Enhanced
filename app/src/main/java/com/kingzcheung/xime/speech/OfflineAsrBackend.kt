@@ -146,7 +146,5 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
         client.unbind()
     }
 
-    override fun getState(): RecognitionState = RecognitionState.IDLE
-
     override fun isAvailable(): Boolean = true
 }

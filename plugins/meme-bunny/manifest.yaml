@@ -13,7 +13,7 @@ description: 恶搞兔表情包（6 个表情图片），这只是一个示例�
 icon: "🐰"
 
 # 插件版本（字符串）
-version: 2.1.0
+version: 3.0.0
 
 # 插件分类：emoji 表情（多选启用，即时生效）
 type: emoji
@@ -26,8 +26,8 @@ entry: main.lua
 capabilities:
   emoji:
     supportsSearch: true
-    categories:
-      - 恶搞兔
+    columns: 3
+    itemHeightDp: 110
 
 # 配置字段（无）
 configSchema: []

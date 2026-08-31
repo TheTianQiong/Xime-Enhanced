@@ -13,6 +13,8 @@ import com.kingzcheung.xime.keyboard.MainType
 import com.kingzcheung.xime.keyboard.OverlayRoute
 import com.kingzcheung.xime.keyboard.PanelType
 import com.kingzcheung.xime.keyboard.ToolbarButton
+import com.kingzcheung.xime.keyboard.ToolbarButtonItem
+import com.kingzcheung.xime.plugin.core.api.PluginResultItem
 import com.kingzcheung.xime.settings.SchemaInfo
 import com.kingzcheung.xime.speech.RecognitionState
 import com.kingzcheung.xime.ui.keyboard.KeyboardDispatchAction
@@ -65,6 +67,8 @@ data class KeyboardUiState(
     val voiceRecognizedText: String = "",
     val isSttEnabled: Boolean = true,
     val toolbarButtons: List<String> = ToolbarButton.DEFAULT_VISIBLE.map { it.id },
+    /** 已启用插件声明的工具栏按钮（候选池），渲染时与内置按钮合并。 */
+    val toolbarPluginButtons: List<ToolbarButtonItem.Plugin> = emptyList(),
     val isCalculatorMode: Boolean = false,
     val inputSessionId: Long = 0L,
     val isFloatingMode: Boolean = false,
@@ -80,6 +84,16 @@ data class KeyboardUiState(
     val quickSendFormFocused: Boolean = false,
     val quickSendEditingItemId: Long? = null,
     val quickSendEditingItemText: String = "",
+    val toolPanelVisible: Boolean = false,
+    val toolPanelInputFocused: Boolean = false,
+    val toolPanelPluginId: String = "",
+    val toolPanelTitle: String = "",
+    val toolPanelPrefillText: String = "",
+    val toolPanelItems: List<PluginResultItem> = emptyList(),
+    val toolPanelLoading: Boolean = false,
+    val toolPanelRequestEpoch: Long = 0,
+    val toolPanelDisplay: String? = null,
+    val toolPanelUiNodes: List<Map<*, *>>? = null,
     val clipboardSyncEnabled: Boolean = false,
 )
 

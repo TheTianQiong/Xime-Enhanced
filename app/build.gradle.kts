@@ -218,6 +218,8 @@ dependencies {
 
     // OkHttp for WebSocket and model download
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    // okhttp-sse for SSE stream parsing (plugin streaming API)
+    implementation("com.squareup.okhttp3:okhttp-sse:5.4.0")
     // Apache Commons Compress for tar.bz2 extraction
     implementation("org.apache.commons:commons-compress:1.28.0")
 
@@ -254,7 +256,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.core)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.mockito:mockito-core:5.23.0")
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:6.3.0")
+    // JVM 单测使用真实 org.json 实现（android.jar 内为抛异常的 stub）
+    testImplementation("org.json:json:20240303")
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

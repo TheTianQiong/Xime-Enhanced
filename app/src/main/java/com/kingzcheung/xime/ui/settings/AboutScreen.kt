@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.twotone.BugReport
@@ -46,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,12 +134,28 @@ fun AboutContent(
     onBack: () -> Unit,
     onNavigateToPrivacy: () -> Unit,
     onNavigateToLicenses: () -> Unit,
-    onNavigateToLogViewer: () -> Unit = {}
+    onNavigateToLogViewer: () -> Unit = {},
+    onNavigateToHandwritingCapture: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
     var verboseLoggingEnabled by remember {
         mutableStateOf(SettingsPreferences.isVerboseLoggingEnabled(context))
+    }
+    // 彩蛋入口：1.5 秒内连点"设备信息"卡片 7 次解锁"手写数据采集"（平时隐藏）
+    var captureTapCount by remember { mutableStateOf(0) }
+    var lastCaptureTapMs by remember { mutableStateOf(0L) }
+    var captureUnlocked by rememberSaveable { mutableStateOf(false) }
+    fun onDeviceInfoTapped() {
+        val now = System.currentTimeMillis()
+        if (now - lastCaptureTapMs > 1500L) captureTapCount = 0
+        lastCaptureTapMs = now
+        captureTapCount++
+        if (captureTapCount >= 7) {
+            captureTapCount = 0
+            captureUnlocked = true
+            android.widget.Toast.makeText(context, "已解锁手写数据采集入口", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
     
     Scaffold(
@@ -399,6 +417,18 @@ fun AboutContent(
                             title = "日志查看器",
                             onClick = onNavigateToLogViewer
                         )
+                        if (captureUnlocked) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 72.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingsItem(
+                                icon = Icons.Default.Edit,
+                                title = "手写数据采集",
+                                onClick = onNavigateToHandwritingCapture
+                            )
+                        }
                         if (BuildConfig.DEBUG) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 72.dp),
@@ -435,6 +465,7 @@ fun AboutContent(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { onDeviceInfoTapped() }
                             .padding(16.dp)
                     ) {
                         Text(

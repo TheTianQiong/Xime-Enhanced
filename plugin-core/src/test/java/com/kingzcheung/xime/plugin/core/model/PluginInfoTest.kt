@@ -148,4 +148,47 @@ class PluginInfoTest {
         
         assertEquals("main.lua", pluginInfo.entryScript)
     }
+
+    @Test
+    fun `PluginInfo toolbarButtons default to empty list`() {
+        val pluginInfo = PluginInfo(
+            id = "test",
+            name = "Test",
+            iconResId = 0,
+            versionCode = 1,
+            versionName = "1.0",
+            path = "",
+            description = ""
+        )
+        assertEquals("toolbarButtons 缺省应为空", emptyList<PluginToolbarButton>(), pluginInfo.toolbarButtons)
+    }
+
+    @Test
+    fun `PluginInfo keeps toolbar buttons and category of tool type`() {
+        val buttons = listOf(
+            PluginToolbarButton(id = "ai_reply", label = "AI 回复", icon = "ai_reply.png"),
+            PluginToolbarButton(id = "ai_write", label = "AI 帮写")
+        )
+        val pluginInfo = PluginInfo(
+            id = "test",
+            name = "Test",
+            iconResId = 0,
+            versionCode = 1,
+            versionName = "1.0",
+            path = "",
+            description = "",
+            type = "tool",
+            toolbarButtons = buttons
+        )
+        assertEquals(buttons, pluginInfo.toolbarButtons)
+        assertEquals(PluginCategory.TOOL, pluginInfo.category)
+    }
+
+    @Test
+    fun `PluginToolbarButton defaults`() {
+        val button = PluginToolbarButton(id = "ai_reply")
+        assertEquals("", button.label)
+        assertEquals(null, button.icon)
+        assertEquals("open_panel", button.action)
+    }
 }

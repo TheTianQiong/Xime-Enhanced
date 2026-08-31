@@ -11,7 +11,7 @@ icon: "☁️"
 description: 通过 WebDAV 文件同步剪贴板（文本，多设备）,目前仅测试了坚果云盘的 WebDAV 接口。
 
 # 插件版本（字符串）
-version: 0.1.0
+version: 0.2.0
 
 # 插件分类：clipboard_sync 剪贴板同步（单选激活）
 type: clipboard_sync

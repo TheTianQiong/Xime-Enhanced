@@ -128,19 +128,18 @@ private fun StrokeKeyboardSwipeOverlay(
     val configuration = LocalConfiguration.current
     val isLandscape = !isFloatingMode && configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
-    var swipeState by remember { mutableStateOf(SwipeState()) }
+    val swipeBubble = rememberSwipeBubbleController()
     var keyboardBounds by remember { mutableStateOf(Rect(0f, 0f, 0f, 0f)) }
-    var lastKeyBounds by remember { mutableStateOf(Rect(0f, 0f, 0f, 0f)) }
 
     val isDarkTheme = keyTextColor == Color(0xFFE8EAED)
 
     val bubbleData = rememberSwipeBubbleDrawData(
-        swipeState = swipeState,
-        keyBounds = lastKeyBounds,
+        swipeState = swipeBubble.state,
+        keyBounds = swipeBubble.keyBounds,
         keyBackgroundColor = bubbleBackgroundColor,
         keyTextColor = keyTextColor,
         accentColor = specialKeyTextColor,
-        keyWidth = if (swipeState.isSwiping || swipeState.isPressed) lastKeyBounds.width else 0f,
+        keyWidth = if (swipeBubble.state.isSwiping || swipeBubble.state.isPressed) swipeBubble.keyBounds.width else 0f,
         keyboardWidth = keyboardBounds.width
     )
 
@@ -150,12 +149,14 @@ private fun StrokeKeyboardSwipeOverlay(
         } else {
             state
         }
-        swipeState = newState
-        lastKeyBounds = Rect(
-            left = bounds.left - keyboardBounds.left,
-            top = bounds.top - keyboardBounds.top,
-            right = bounds.right - keyboardBounds.left,
-            bottom = bounds.bottom - keyboardBounds.top
+        swipeBubble.update(
+            newState,
+            Rect(
+                left = bounds.left - keyboardBounds.left,
+                top = bounds.top - keyboardBounds.top,
+                right = bounds.right - keyboardBounds.left,
+                bottom = bounds.bottom - keyboardBounds.top
+            )
         )
     }
 

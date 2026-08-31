@@ -7,6 +7,7 @@ import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.kingzcheung.xime.plugin.core.model.PluginInfo
 import com.kingzcheung.xime.plugin.core.model.PluginSource
+import com.kingzcheung.xime.plugin.core.model.PluginToolbarButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -29,7 +30,10 @@ internal data class PluginConfig(
     val maxHostVersion: String?,
     val entryScript: String?,
     val declaredHosts: List<String> = emptyList(),
-    val allowCustomHosts: Boolean = false
+    val allowCustomHosts: Boolean = false,
+    val toolbarButtons: List<PluginToolbarButton> = emptyList(),
+    val icon: String? = null,
+    val capabilities: com.kingzcheung.xime.plugin.core.model.PluginCapabilities? = null
 )
 
 /** manifest.yaml 的类型化模型，与宿主一起用 kaml 解析。 */
@@ -43,7 +47,11 @@ internal data class PluginManifest(
     val description: String? = null,
     val minHostVersion: String? = null,
     val maxHostVersion: String? = null,
-    val network: NetworkConfig? = null
+    val network: NetworkConfig? = null,
+    val toolbarButtons: List<ToolbarButtonConfig> = emptyList(),
+    /** 顶层 icon：文字（如 "译"）或 resources/ 下图片文件名。 */
+    val icon: String? = null,
+    val capabilities: CapabilitiesConfig? = null
 )
 
 @Serializable
@@ -51,6 +59,87 @@ internal data class NetworkConfig(
     val hosts: List<String> = emptyList(),
     val allowCustomHosts: Boolean = false
 )
+
+/** manifest.toolbarButtons 单条（类型化）。 */
+@Serializable
+internal data class ToolbarButtonConfig(
+    val id: String,
+    val label: String = "",
+    val icon: String? = null,
+    val action: String = "open_panel"
+)
+
+/** manifest.capabilities 能力声明（类型化）。 */
+@Serializable
+internal data class CapabilitiesConfig(
+    val emoji: EmojiCapabilitiesConfig? = null,
+    val speech: SpeechCapabilitiesConfig? = null,
+    val tool: ToolCapabilitiesConfig? = null,
+    val clipboardSync: ClipboardSyncCapabilitiesConfig? = null,
+    /** 下行事件订阅（如 "input_changed"），小写 snake_case。 */
+    val events: List<String> = emptyList()
+)
+
+@Serializable
+internal data class EmojiCapabilitiesConfig(
+    val supportsSearch: Boolean = false,
+    val columns: Int? = null,
+    val itemHeightDp: Int? = null
+)
+
+@Serializable
+internal data class SpeechCapabilitiesConfig(
+    val inputMode: String = "streaming",
+    val supportsPartialResults: Boolean = true,
+    val requiresNetwork: Boolean = true
+)
+
+@Serializable
+internal data class ToolCapabilitiesConfig(
+    val display: String? = null
+)
+
+@Serializable
+internal data class ClipboardSyncCapabilitiesConfig(
+    val protocols: List<String> = emptyList()
+)
+
+/** manifest 能力声明 → 类型化模型（未知字段静默忽略，非法枚举值按未声明处理）。 */
+private fun CapabilitiesConfig.toModel(): com.kingzcheung.xime.plugin.core.model.PluginCapabilities {
+    return com.kingzcheung.xime.plugin.core.model.PluginCapabilities(
+        emoji = emoji?.let {
+            com.kingzcheung.xime.plugin.core.model.PluginCapabilities.EmojiCapabilities(
+                supportsSearch = it.supportsSearch,
+                columns = it.columns?.takeIf { c -> c > 0 },
+                itemHeightDp = it.itemHeightDp?.takeIf { h -> h > 0 }
+            )
+        },
+        speech = speech?.let {
+            com.kingzcheung.xime.plugin.core.model.PluginCapabilities.SpeechCapabilities(
+                inputMode = it.inputMode,
+                supportsPartialResults = it.supportsPartialResults,
+                requiresNetwork = it.requiresNetwork
+            )
+        },
+        tool = tool?.let {
+            com.kingzcheung.xime.plugin.core.model.PluginCapabilities.ToolCapabilities(
+                display = when (it.display?.lowercase()) {
+                    "direct" -> com.kingzcheung.xime.plugin.core.api.ToolResult.DIRECT
+                    "passive" -> com.kingzcheung.xime.plugin.core.api.ToolResult.PASSIVE
+                    // 旧契约 "select"（全屏结果页）已并入 passive（InfoPanel 内 items 点选上屏）
+                    "select" -> com.kingzcheung.xime.plugin.core.api.ToolResult.PASSIVE
+                    else -> null
+                }
+            )
+        },
+        clipboardSync = clipboardSync?.let {
+            com.kingzcheung.xime.plugin.core.model.PluginCapabilities.ClipboardSyncCapabilities(
+                protocols = it.protocols.filter { p -> p.isNotBlank() }
+            )
+        },
+        events = events.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+    )
+}
 
 /**
  * 插件安装器（Lua 脚本插件）。
@@ -71,6 +160,13 @@ class InstallerManager(
         private const val PLUGINS_DIR = "plugins"
         private const val MANIFEST_YAML = "manifest.yaml"
 
+        /** xipk 包大小上限（10MB）：插件是脚本+资源，超过即拒绝安装。 */
+        private const val MAX_ARCHIVE_FILE_BYTES = 10 * 1024 * 1024
+
+        /** 解压条目数与解压后总体积上限（防 zip bomb）。 */
+        private const val MAX_ARCHIVE_ENTRIES = 512
+        private const val MAX_ARCHIVE_TOTAL_BYTES = 64 * 1024 * 1024
+
         /** 插件 id 白名单：字母/数字/下划线/连字符，点号仅作命名空间分段（禁止 .. / 空段 / /），最长 64，杜绝路径穿越。 */
         private val PLUGIN_ID_REGEX = Regex("^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*$")
         private const val PLUGIN_ID_MAX_LENGTH = 64
@@ -78,11 +174,35 @@ class InstallerManager(
         /** 入口脚本：普通文件名，不允许路径分隔符与 ".."。 */
         private val ENTRY_SCRIPT_REGEX = Regex("^[A-Za-z0-9_.-]{1,128}$")
 
+        /** 网络声明域名：合法域名或 IPv4（禁止通配/空白/超长，授权 UI 直接展示，需可读可信）。 */
+        private val DECLARED_HOST_REGEX = Regex(
+            "^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\\.([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+        )
+
         internal fun isValidPluginId(id: String): Boolean =
             id.length <= PLUGIN_ID_MAX_LENGTH && PLUGIN_ID_REGEX.matches(id)
 
         private fun isValidEntryScript(name: String): Boolean =
             ENTRY_SCRIPT_REGEX.matches(name) && !name.contains("..")
+
+        /** 网络声明域名是否合法（域名/IPv4，供 manifest 解析时过滤）。 */
+        internal fun isValidDeclaredHost(host: String): Boolean =
+            DECLARED_HOST_REGEX.matches(host)
+
+        /** 插件包内资源相对路径：允许子目录（/ 分隔），禁止 .. 穿越、绝对路径与反斜杠。 */
+        fun isValidResourcePath(name: String): Boolean {
+            if (name.isBlank() || name.length > 256) return false
+            if (name.startsWith("/") || name.contains("\\")) return false
+            return name.split('/').all { it.isNotEmpty() && it != "." && it != ".." }
+        }
+
+        /** 工具栏按钮 id：非空；禁止逗号（偏好存储按逗号分隔）、XML 特殊字符与换行/空白控制符。
+         *  全局限定 id 建议带插件命名空间（如 `pluginId:action`）。 */
+        internal fun isValidToolbarButtonId(id: String?): Boolean {
+            if (id.isNullOrBlank()) return false
+            if (id.length > 64) return false
+            return !id.any { it in ",\u003C\u003E\"'&|\\\n\r\t " }
+        }
 
 
         private val manifestYaml: Yaml by lazy {
@@ -93,7 +213,17 @@ class InstallerManager(
         internal fun parseManifestContent(content: String): PluginParseResult = try {
             val manifest = manifestYaml.decodeFromString(PluginManifest.serializer(), content)
             val declaredHosts = manifest.network?.hosts.orEmpty()
-                .filter { it.isNotBlank() }
+                .filter { it.isNotBlank() && isValidDeclaredHost(it) }
+            val toolbarButtons = manifest.toolbarButtons
+                .filter { isValidToolbarButtonId(it.id) }
+                .map {
+                    PluginToolbarButton(
+                        id = it.id,
+                        label = it.label,
+                        icon = it.icon?.takeIf { i -> i.isNotBlank() },
+                        action = it.action.ifBlank { "open_panel" }
+                    )
+                }
 
             PluginParseResult.Success(
                 PluginConfig(
@@ -106,7 +236,10 @@ class InstallerManager(
                     maxHostVersion = manifest.maxHostVersion?.takeIf { it.isNotBlank() },
                     entryScript = manifest.entry,
                     declaredHosts = declaredHosts,
-                    allowCustomHosts = manifest.network?.allowCustomHosts ?: false
+                    allowCustomHosts = manifest.network?.allowCustomHosts ?: false,
+                    toolbarButtons = toolbarButtons,
+                    icon = manifest.icon?.takeIf { it.isNotBlank() },
+                    capabilities = manifest.capabilities?.toModel()
                 )
             )
         } catch (e: Exception) {
@@ -141,6 +274,11 @@ class InstallerManager(
     ): InstallResult = withContext(Dispatchers.IO) {
         if (!pluginFile.exists()) {
             return@withContext InstallResult.Failure("插件文件不存在")
+        }
+        if (pluginFile.length() > MAX_ARCHIVE_FILE_BYTES) {
+            return@withContext InstallResult.Failure(
+                "插件包超过大小上限（${MAX_ARCHIVE_FILE_BYTES / 1024 / 1024}MB），拒绝安装"
+            )
         }
 
         val pluginConfig = when (val parsed = parsePluginConfig(pluginFile)) {
@@ -213,7 +351,10 @@ class InstallerManager(
                 trustLevel = com.kingzcheung.xime.plugin.core.util.PluginSignatureUtil.classifyLuaPlugin(source),
                 entryScript = entryScript,
                 declaredHosts = pluginConfig.declaredHosts,
-                allowCustomHosts = pluginConfig.allowCustomHosts
+                allowCustomHosts = pluginConfig.allowCustomHosts,
+                toolbarButtons = pluginConfig.toolbarButtons,
+                manifestIcon = pluginConfig.icon,
+                capabilities = pluginConfig.capabilities
             )
 
             if (existingPlugin != null) {
@@ -268,11 +409,20 @@ class InstallerManager(
         return File(pluginsDir, pluginId)
     }
 
-    /** 解压 Lua 插件包到插件目录（防 zip-slip 路径穿越）。 */
+    /** 解压 Lua 插件包到插件目录（防 zip-slip 路径穿越与 zip bomb 解压膨胀）。 */
     private fun extractPluginArchive(archiveFile: File, pluginDir: File) {
         ZipFile(archiveFile).use { zip ->
+            var entryCount = 0
+            var totalBytes = 0L
             for (entry in zip.entries()) {
+                if (++entryCount > MAX_ARCHIVE_ENTRIES) {
+                    throw IllegalArgumentException("插件包条目数超过上限（$MAX_ARCHIVE_ENTRIES）")
+                }
                 if (entry.isDirectory) continue
+                if (entry.size > 0) totalBytes += entry.size
+                if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) {
+                    throw IllegalArgumentException("插件包解压体积超过上限（${MAX_ARCHIVE_TOTAL_BYTES / 1024 / 1024}MB）")
+                }
                 // Windows 打包工具可能产生 "\" 分隔的条目名，统一规范为 "/"
                 val name = entry.name.replace('\\', '/')
                 if (name.startsWith("lib/")) continue

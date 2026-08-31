@@ -58,6 +58,9 @@ import com.kingzcheung.xime.plugin.core.config.IPluginConfigurable
 import com.kingzcheung.xime.plugin.core.config.PluginConfigStore
 import com.kingzcheung.xime.plugin.core.config.PluginFieldType
 import com.kingzcheung.xime.plugin.core.config.PluginSettingField
+import com.kingzcheung.xime.plugin.core.lua.ws.NetworkPolicy
+import com.kingzcheung.xime.plugin.core.runtime.PluginManager
+import com.kingzcheung.xime.settings.SettingsPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +71,7 @@ fun PluginConfigFormScreen(
     pluginId: String,
     plugin: IPluginConfigurable,
     pluginName: String,
+    schema: List<PluginSettingField> = emptyList(),
     onBack: () -> Unit,
     embedded: Boolean = false
 ) {
@@ -75,7 +79,11 @@ fun PluginConfigFormScreen(
     val configStore = remember(pluginId) {
         PluginConfigStoreImpl(context.applicationContext as android.app.Application, pluginId)
     }
-    val fields = plugin.getSettingsSchema()
+    val fields = remember(schema, plugin) {
+        if (schema.isNotEmpty()) schema else {
+            runCatching { plugin.getSettingsSchema() }.getOrElse { emptyList() }
+        }
+    }
     val groupedFields = remember(fields) { fields.groupBy { it.section.orEmpty() } }
 
     val dynamicOptions = remember(plugin) { mutableStateMapOf<String, List<String>>() }
@@ -113,6 +121,22 @@ fun PluginConfigFormScreen(
         )
     }
 
+    // 插件声明 allowCustomHosts 时，配置中填写的 HTTP(S) 服务器域名自动获得联网授权，
+    // 兑现 manifest helpText「域名将自动获得联网授权」的承诺，无需用户再手动寻找授权入口。
+    fun autoAuthorizeConfiguredHosts() {
+        val allowCustom = PluginManager.getAllInstallPlugins()
+            .firstOrNull { it.id == pluginId }
+            ?.allowCustomHosts ?: false
+        if (!allowCustom) return
+        configStore.keys().forEach { key ->
+            configStore.get(key)?.let { value ->
+                NetworkPolicy.extractHttpHost(value)?.let { host ->
+                    SettingsPreferences.authorizePluginHost(context, pluginId, host)
+                }
+            }
+        }
+    }
+
     @Composable
     fun saveButton() {
         Button(
@@ -128,6 +152,7 @@ fun PluginConfigFormScreen(
                     Toast.makeText(context, "请填写必填配置", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
+                autoAuthorizeConfiguredHosts()
                 Toast.makeText(context, "配置已保存", Toast.LENGTH_SHORT).show()
                 if (!embedded) onBack()
             },
@@ -218,6 +243,27 @@ private fun PluginSettingFieldEditor(
     }
 
     when (field.type) {
+        PluginFieldType.TEXTAREA -> {
+            OutlinedTextField(
+                value = value,
+                onValueChange = {
+                    value = it
+                    persist()
+                },
+                label = { Text(field.label) },
+                placeholder = field.placeholder?.let { { Text(it) } },
+                minLines = 4,
+                maxLines = 8,
+                supportingText = field.helpText?.let { { Text(it) } },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                )
+            )
+        }
+
         PluginFieldType.TEXT,
         PluginFieldType.NUMBER -> {
             OutlinedTextField(

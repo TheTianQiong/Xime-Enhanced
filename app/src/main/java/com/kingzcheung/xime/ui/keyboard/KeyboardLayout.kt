@@ -242,9 +242,8 @@ fun KeyboardLayout(
         SubcharHelper.init(context)
     }
 
-    var swipeState by remember { mutableStateOf(SwipeState()) }
+    val swipeBubble = rememberSwipeBubbleController()
     var keyboardBounds by remember { mutableStateOf(Rect(0f, 0f, 0f, 0f)) }
-    var lastKeyBounds by remember { mutableStateOf(Rect(0f, 0f, 0f, 0f)) }
 
     // 监听手势配置版本号，部署后强制刷新键帽显示
     val cfgVer by KeysConfigHelper.configVersion.collectAsState()
@@ -255,23 +254,24 @@ fun KeyboardLayout(
         } else {
             state
         }
-        swipeState = newState
-
-        lastKeyBounds = Rect(
-            left = bounds.left - keyboardBounds.left,
-            top = bounds.top - keyboardBounds.top,
-            right = bounds.right - keyboardBounds.left,
-            bottom = bounds.bottom - keyboardBounds.top
+        swipeBubble.update(
+            newState,
+            Rect(
+                left = bounds.left - keyboardBounds.left,
+                top = bounds.top - keyboardBounds.top,
+                right = bounds.right - keyboardBounds.left,
+                bottom = bounds.bottom - keyboardBounds.top
+            )
         )
     }
 
     val bubbleData = rememberSwipeBubbleDrawData(
-        swipeState = swipeState,
-        keyBounds = lastKeyBounds,
+        swipeState = swipeBubble.state,
+        keyBounds = swipeBubble.keyBounds,
         keyBackgroundColor = bubbleBgColor,
         keyTextColor = keyTextColor,
         accentColor = specialKeyTextColor,
-        keyWidth = if (swipeState.isSwiping || swipeState.isPressed) lastKeyBounds.width else 0f,
+        keyWidth = if (swipeBubble.state.isSwiping || swipeBubble.state.isPressed) swipeBubble.keyBounds.width else 0f,
         keyboardWidth = keyboardBounds.width
     )
 

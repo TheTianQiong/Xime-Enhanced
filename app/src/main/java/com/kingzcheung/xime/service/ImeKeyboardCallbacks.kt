@@ -65,25 +65,13 @@ internal fun rememberImeKeyboardCallbacks(
                                 associationCandidates = emptyList()
                             )
                         } else {
-                            val ic = service.currentInputConnection
-                            var replaced = false
-                            if (ic != null) {
-                                val before = runCatching {
-                                    ic.getTextBeforeCursor(pendingEnglish.length, 0)?.toString()
-                                }.getOrNull()
-                                if (before == pendingEnglish) {
-                                    ic.beginBatchEdit()
-                                    try {
-                                        replaced = ic.deleteSurroundingText(pendingEnglish.length, 0)
-                                        ic.commitText(text, 1)
-                                    } finally {
-                                        ic.endBatchEdit()
-                                    }
-                                } else {
-                                    // 光标位置与编码不对应（用户移动过光标）：放弃替换，
-                                    // 候选词降级为直接追加上屏，避免误删用户文本。
-                                    ic.commitText(text, 1)
-                                }
+                            // 内部编辑器（快捷发送/工具面板）与宿主 InputConnection 统一走
+                            // service 层重定向，避免编码回删/替换作用到错误的屏上文本。
+                            var replaced = service.replaceBeforeCursor(pendingEnglish, text)
+                            if (!replaced) {
+                                // 光标位置与编码不对应（用户移动过光标）：放弃替换，
+                                // 候选词降级为直接追加上屏，避免误删用户文本。
+                                service.commitText(text)
                             }
                             FileLogger.d(
                                 XimeInputMethodService.TAG,
@@ -95,6 +83,14 @@ internal fun rememberImeKeyboardCallbacks(
                             )
                         }
                     } else {
+                        // 单次联想模式（仅中文模式——英文 commitText 不触发推理，
+                        // 否则抑制标志会悬挂并吞掉下次切回中文后的首轮推理）：
+                        // 联想候选上屏前先置抑制标志——commitText 触发的下一轮自动推理
+                        // 被跳过并清空联想候选（只推理一次）。
+                        // 连续联想模式：不抑制，commitText 自动推理新联想（一直上屏一直推理）。
+                        if (!service.uiState.value.isAsciiMode && SettingsPreferences.isSingleAssociationMode(service)) {
+                            service.predictionManager.suppressNextPredictionOnce()
+                        }
                         service.commitText(text)
                         service.updateUI()
                     }
@@ -109,6 +105,17 @@ internal fun rememberImeKeyboardCallbacks(
             onClipboardPullRemote = { service.clipboardSyncBridge?.pullOnce() },
             onCommitText = { text -> service.textCommit.commitClipboardText(text) },
             onDeleteText = { count -> service.textCommit.deleteClipboardChars(count) },
+            onHandwritingAutoCommit = { newTail, expectedTail ->
+                if (expectedTail.isEmpty()) {
+                    service.commitTextSilently(newTail)
+                    true
+                } else {
+                    // 光标前文本与手写尾部不对应（用户移动过光标/退格过）时不上屏，
+                    // 调用方重置手写尾部状态后以追加模式重建，避免误删/重复上屏
+                    service.replaceBeforeCursor(expectedTail, newTail)
+                }
+            },
+            onHandwritingFinalize = { service.finalizeHandwritingPrediction() },
             onQuickSend = {},
             onKeyboardResize = {
                 val config = service.resources.configuration
@@ -226,6 +233,15 @@ internal fun rememberImeKeyboardCallbacks(
                 SettingsPreferences.setToolbarButtons(service, buttons)
                 service.uiState.value = service.uiState.value.copy(toolbarButtons = buttons)
             },
+            onOpenToolPanel = { pluginId -> service.openToolPanel(pluginId) },
+            onToolPanelClose = { service.closeToolPanel() },
+            onToolPanelItemClick = { item -> service.commitToolPanelItem(item.text) },
+            onToolPanelAction = { actionId -> service.dispatchToolPanelAction(actionId) },
+            onToolPanelFocusChange = { focused ->
+                service.uiState.value = service.uiState.value.copy(
+                    toolPanelInputFocused = focused,
+                )
+            },
             onKeyboardModeChange = { chineseMode ->
                 if (service.isChineseMode != chineseMode) {
                     service.isChineseMode = chineseMode
@@ -290,7 +306,7 @@ internal fun rememberImeKeyboardCallbacks(
                     == SettingsPreferences.INPUT_TEXT_INPUT_BOX) {
                     service.endComposingInputBox()
                 } else {
-                    service.currentInputConnection?.deleteSurroundingText(count, 0)
+                    service.deleteBeforeCursor(count)
                 }
                 // undo 联动：撤销 right commit 段时回滚用户词典调频。
                 val undone = service.t9PartialSegments.removeLastOrNull()
@@ -335,6 +351,12 @@ internal fun rememberImeKeyboardCallbacks(
                 }
             },
             onShowQuickSendForm = {
+                service.closeToolPanel()
+                // 从 Overlay 页面（剪贴板面板）打开表单时必须退出 Overlay：
+                // Overlay 渲染为全屏 clickable Box（吞点击），若不退出，表单会被
+                // 盖在其下——可见但关闭按钮等点击全部失效（时灵时不灵的根源：
+                // 从主键盘打开则无叠加）。
+                service.keyboardViewModel.closeOverlay()
                 val current = service.uiState.value
                 service.uiState.value = current.copy(
                     showQuickSendForm = true,
@@ -343,8 +365,12 @@ internal fun rememberImeKeyboardCallbacks(
                     quickSendEditingItemText = "",
                     enterKeyText = "确定",
                 )
+                // 撑高由 SideEffect 驱动：uiState 变化 → Compose 内容高度变化 →
+                // updateHeight 改容器物理高度 → relayout → onComputeInsets 自动重算。
             },
             onQuickSendEditItem = { id, text ->
+                // 同 onShowQuickSendForm：编辑入口在剪贴板面板内，先退出 Overlay 防表单被盖
+                service.keyboardViewModel.closeOverlay()
                 service.uiState.value = service.uiState.value.copy(
                     showQuickSendForm = true,
                     quickSendFormFocused = true,
@@ -358,6 +384,7 @@ internal fun rememberImeKeyboardCallbacks(
                 }
             },
             onHideQuickSendForm = {
+                android.util.Log.d("QuickSendForm", "onHideQuickSendForm invoked")
                 service.uiState.value = service.uiState.value.copy(
                     showQuickSendForm = false,
                     quickSendFormFocused = false,
@@ -367,12 +394,19 @@ internal fun rememberImeKeyboardCallbacks(
                 )
                 QuickSendFormEditTextHolder.editText = null
                 service.keyboardViewModel.showOverlay(OverlayRoute.Clipboard(1))
+                // insets 恢复由 SideEffect 驱动：表单收起 → 容器物理高度还原 →
+                // relayout → onComputeInsets 自动重算，无需强制触发。
             },
             onQuickSendFormFocusChange = { focused: Boolean ->
-                service.uiState.value = service.uiState.value.copy(
-                    quickSendFormFocused = focused,
-                    enterKeyText = if (focused) "确定" else "发送",
-                )
+                // 聚焦时回车键为"确定"；失焦不改文案——表单仍显示，回车保持"确定"
+                // 语义（提交并关闭，由 handleKeyPress 的 showQuickSendForm 分支保证）。
+                // 关闭表单时由 onHideQuickSendForm / onWindowHidden 统一还原"发送"。
+                val s = service.uiState.value
+                service.uiState.value = if (focused) {
+                    s.copy(quickSendFormFocused = true, enterKeyText = "确定")
+                } else {
+                    s.copy(quickSendFormFocused = false)
+                }
             },
         )
     }

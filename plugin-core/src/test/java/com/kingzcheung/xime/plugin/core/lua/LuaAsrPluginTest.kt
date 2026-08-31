@@ -69,9 +69,6 @@ class LuaAsrPluginTest {
         )
         assertTrue("main.lua 应能加载", runtime.load())
 
-        // 元信息
-        assertEquals("funasr", runtime.call("getProviderId").tojstring())
-        assertEquals("阿里百炼 FunAsr", runtime.call("getDisplayName").tojstring())
         val icon = LuaScriptRuntime.tableToMap(runtime.call("getIcon"))
         assertEquals("icon.png", icon["assetName"]?.tojstring())
         assertTrue("未配置时不就绪", !runtime.call("isConfigured").toboolean())

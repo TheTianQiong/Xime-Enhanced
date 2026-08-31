@@ -19,7 +19,7 @@ description: 包含 174 个常用颜文字的表情插件
 icon: "థ౪థ"
 
 # 插件版本（字符串，Lua 插件无 APK versionCode 概念）
-version: 2.1.0
+version: 3.0.0
 
 # 插件分类，决定归入插件中心的哪个分组与可用能力：
 #   emoji    表情（多选启用，即时生效）
@@ -40,8 +40,8 @@ minHostVersion: 2.6.0
 capabilities:
   emoji:
     supportsSearch: true   # 支持按文本搜索表情
-    categories:            # 插件内置的分类（可选，宿主也可运行时查询）
-      - 颜文字
+    columns: 3             # 表情网格列数（布局元数据，插件不再运行时声明）
+    itemHeightDp: 30
 
 # 配置字段声明（宿主直接渲染表单，无需先执行脚本）
 # 类型：text | secret | select | multi_select | switch | number

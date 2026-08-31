@@ -20,6 +20,16 @@ class NetworkPolicyTest {
     }
 
     @Test
+    fun `extractHttpHost extracts domain only from http urls`() {
+        assertEquals("dav.example.com", NetworkPolicy.extractHttpHost("https://dav.example.com:8080/dav/"))
+        assertEquals("api.openai.com", NetworkPolicy.extractHttpHost("https://api.openai.com/v1/chat/completions"))
+        assertEquals("192.168.1.50", NetworkPolicy.extractHttpHost("http://192.168.1.50:8080/dav/"))
+        assertNull("非 http 协议返回 null", NetworkPolicy.extractHttpHost("wss://dav.example.com/ws"))
+        assertNull("空白返回 null", NetworkPolicy.extractHttpHost("  "))
+        assertNull("无协议返回 null", NetworkPolicy.extractHttpHost("dav.example.com/path"))
+    }
+
+    @Test
     fun `trusted host passes silently`() {
         assertNull(
             NetworkPolicy.check(
@@ -60,5 +70,43 @@ class NetworkPolicyTest {
         )
         assertTrue("已声明但未授权应拒绝", reason != null)
         assertTrue("拒绝原因应含授权提示", reason!!.contains("授权"))
+    }
+
+    @Test
+    fun `configured custom host authorized passes`() {
+        assertNull(
+            NetworkPolicy.check(
+                "https://my-llm.example.com/v1/chat/completions",
+                trusted,
+                declaredHosts = emptyList(),
+                authorizedHosts = setOf("my-llm.example.com"),
+                customHosts = setOf("my-llm.example.com")
+            )
+        )
+    }
+
+    @Test
+    fun `configured custom host not authorized rejected`() {
+        val reason = NetworkPolicy.check(
+            "https://my-llm.example.com/v1/chat/completions",
+            trusted,
+            declaredHosts = emptyList(),
+            authorizedHosts = emptySet(),
+            customHosts = setOf("my-llm.example.com")
+        )
+        assertTrue("已配置但未授权应拒绝", reason != null)
+        assertTrue("拒绝原因应含授权提示", reason!!.contains("授权"))
+    }
+
+    @Test
+    fun `neither declared nor configured host rejected`() {
+        val reason = NetworkPolicy.check(
+            "https://evil.example.com/v1",
+            trusted,
+            declaredHosts = emptyList(),
+            authorizedHosts = emptySet(),
+            customHosts = setOf("my-llm.example.com")
+        )
+        assertTrue("未声明未配置应拒绝", reason != null)
     }
 }

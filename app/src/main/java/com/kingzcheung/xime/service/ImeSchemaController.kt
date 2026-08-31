@@ -398,6 +398,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             floatingOffsetY = 0,
         )
         if (enabled) {
+            service.closeToolPanel()
             service.currentEffectiveKeyboardHeight = cappedKbH + 18 + 50 + service.uiState.value.keyboardBottomPaddingDp
         }
         service.applyWindowBackground()

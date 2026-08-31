@@ -92,7 +92,8 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
         if (isAsciiMode != service.uiState.value.isAsciiMode) {
             FileLogger.i(XimeInputMethodService.TAG, "applyComposition: ascii ${service.uiState.value.isAsciiMode}->$isAsciiMode")
         }
-        service.uiState.value = service.uiState.value.copy(isAsciiMode = isAsciiMode)
+        // composing 快照 → 插件（input_changed 事件；T9 与候选栏同源显示态）
+        service.pluginEvents.dispatchInputChanged(if (isT9Schema) displayText else inputText)
 
         if (pendingEnglish.isNotEmpty() && service.supportsEnglishCandidateReplace()) {
             service.serviceScope.launch {
@@ -103,7 +104,7 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
             }
         }
 
-        if (codeInInputBox) {
+        if (codeInInputBox && !service.uiState.value.toolPanelInputFocused) {
             val ic = service.currentInputConnection
             if (isComposing && displayText.isNotEmpty()) {
                 showInputBoxComposition(ic, displayText)
@@ -117,6 +118,9 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
     private fun showInputBoxComposition(ic: android.view.inputmethod.InputConnection, displayText: String) {
         // 第二参数为 1：光标相对编码起始偏移 1 个字符，使光标落在编码末尾，
         // 避免传 displayText.length 时被 AOSP 钳制到整段文本末尾（光标跑到最右边）。
+        // 标记输入框存在 composing 区域：endComposingInputBox 仅在此标记下执行 setComposingText("") 清空，
+        // 否则该调用会在光标处插入空串，光标处有选中文字时等于删除选区。
+        service.markInputBoxComposing()
         ic.beginBatchEdit()
         try {
             ic.setComposingText(displayText, 1)
@@ -190,7 +194,9 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
             hasPrevPage = result.hasPrevPage
         )
         service.uiState.value = service.uiState.value.copy(isAsciiMode = isAsciiMode)
-        
+        // composing 快照 → 插件（input_changed 事件；空编码表示本轮输入结束）
+        service.pluginEvents.dispatchInputChanged(if (isT9Schema) displayText else result.inputText)
+
         if (pendingEnglish.isNotEmpty() && service.supportsEnglishCandidateReplace()) {
             service.serviceScope.launch {
                 val candidates = service.predictionManager.getEnglishAssociations(pendingEnglish, PredictionManager.MAX_ASSOCIATION_COUNT)

@@ -50,6 +50,6 @@ enum class ToolbarButton(
 }
 
 data class ToolbarAction(
-    val button: ToolbarButton,
+    val item: ToolbarButtonItem,
     val onClick: () -> Unit
 )

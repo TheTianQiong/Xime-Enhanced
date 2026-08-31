@@ -37,10 +37,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kingzcheung.xime.keyboard.ToolbarButton
+import com.kingzcheung.xime.keyboard.ToolbarButtonItem
+import com.kingzcheung.xime.ui.keyboard.ToolbarButtonIcon
 
 @Composable
 fun ToolbarCustomizeView(
     toolbarButtons: List<String>,
+    pluginButtons: List<ToolbarButtonItem.Plugin> = emptyList(),
     keyTextColor: Color,
     backgroundColor: Color,
     accentColor: Color,
@@ -50,18 +53,20 @@ fun ToolbarCustomizeView(
     bottomPaddingDp: Int = 0,
     modifier: Modifier = Modifier
 ) {
-    val allButtons = ToolbarButton.entries.filter { button ->
+    val builtinButtons = ToolbarButton.entries.filter { button ->
         if (button == ToolbarButton.HANDWRITING_LOOKUP) {
             com.kingzcheung.xime.handwriting.HandwritingEngine.hasModel(LocalContext.current)
         } else true
-    }
+    }.map { ToolbarButtonItem.Builtin(it) }
+    val allButtons = builtinButtons + pluginButtons
+    val itemById = remember(allButtons) { allButtons.associateBy { it.id } }
     val originalButtons = remember { toolbarButtons }
     var enabledIds by remember(toolbarButtons) { mutableStateOf(toolbarButtons.toSet()) }
 
-    fun toggleButton(button: ToolbarButton) {
-        enabledIds = if (button.id in enabledIds) enabledIds - button.id else enabledIds + button.id
+    fun toggleButton(item: ToolbarButtonItem) {
+        enabledIds = if (item.id in enabledIds) enabledIds - item.id else enabledIds + item.id
         val newList = toolbarButtons.toMutableList()
-        if (button.id in toolbarButtons) newList.remove(button.id) else newList.add(button.id)
+        if (item.id in toolbarButtons) newList.remove(item.id) else newList.add(item.id)
         onUpdateToolbarButtons?.invoke(newList)
     }
 
@@ -118,7 +123,7 @@ fun ToolbarCustomizeView(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val previewButtons = toolbarButtons.mapNotNull { ToolbarButton.fromId(it) }
+                val previewButtons = toolbarButtons.mapNotNull { itemById[it] }
                 if (previewButtons.isNotEmpty()) {
                     previewButtons.forEach { button ->
                         Box(
@@ -129,11 +134,10 @@ fun ToolbarCustomizeView(
                                 .background(iconButtonContainer),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = button.icon,
-                                contentDescription = null,
+                            ToolbarButtonIcon(
+                                item = button,
                                 tint = keyTextColor.copy(0.6f),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
@@ -187,11 +191,10 @@ fun ToolbarCustomizeView(
 
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = button.icon,
-                                        contentDescription = button.label,
+                                    ToolbarButtonIcon(
+                                        item = button,
                                         tint = if (isEnabled) accentColor else keyTextColor.copy(alpha = 0.8f),
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(22.dp),
                                     )
                                 }
                                 Text(

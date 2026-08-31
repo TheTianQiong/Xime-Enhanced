@@ -108,9 +108,6 @@ class LuaVolcAsrPluginTest {
         )
         assertTrue("main.lua 应能加载", runtime.load())
 
-        // 元信息
-        assertEquals("volc", runtime.call("getProviderId").tojstring())
-        assertEquals("火山引擎流式语音识别", runtime.call("getDisplayName").tojstring())
         assertTrue("未配置时不就绪", !runtime.call("isConfigured").toboolean())
 
         // 设置 schema 非空（插件中心渲染表单的前提）

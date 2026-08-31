@@ -74,9 +74,10 @@ fun VoiceKeyboardLayout(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(top = 16.dp),
+                .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            // 垂直居中：矮屏/大字缩放导致空间不足时内容对称分布，避免贴顶溢出被下方按钮行盖住（"文字只显示上半部分"）
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
         ) {
             if (pluginName.isNotEmpty()) {
                 Text(
@@ -124,7 +125,7 @@ fun VoiceKeyboardLayout(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -203,7 +204,7 @@ fun VoiceKeyboardLayout(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp),
+                .height(64.dp),
             contentAlignment = Alignment.Center
         ) {
             Canvas(

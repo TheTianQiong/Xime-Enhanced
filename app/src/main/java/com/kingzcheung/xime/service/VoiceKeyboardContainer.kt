@@ -43,15 +43,6 @@ class VoiceKeyboardContainer(
         }
     }
 
-    fun resetHeight() {
-        val params = layoutParams
-        if (params != null && params.height != FrameLayout.LayoutParams.MATCH_PARENT) {
-            params.height = FrameLayout.LayoutParams.MATCH_PARENT
-            layoutParams = params
-            requestLayout()
-        }
-    }
-
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
         ev?.let {
             when (it.action) {

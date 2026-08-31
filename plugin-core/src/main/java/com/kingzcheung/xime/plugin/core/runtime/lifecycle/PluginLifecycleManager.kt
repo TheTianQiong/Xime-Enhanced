@@ -8,6 +8,7 @@ import com.kingzcheung.xime.plugin.core.lua.LuaClipboardSyncPluginAdapter
 import com.kingzcheung.xime.plugin.core.lua.LuaEmojiPluginAdapter
 import com.kingzcheung.xime.plugin.core.lua.LuaPluginAdapter
 import com.kingzcheung.xime.plugin.core.lua.LuaScriptRuntime
+import com.kingzcheung.xime.plugin.core.lua.LuaToolPluginAdapter
 import com.kingzcheung.xime.plugin.core.model.PluginCategory
 import com.kingzcheung.xime.plugin.core.model.PluginContext
 import com.kingzcheung.xime.plugin.core.model.PluginInfo
@@ -154,8 +155,11 @@ class PluginLifecycleManager(
                 wsHostApi = PluginManager.wsHostApiFactory?.invoke(plugin.id),
                 httpHostApi = PluginManager.httpHostApiFactory?.invoke(plugin.id),
                 cryptoHostApi = PluginManager.cryptoHostApiFactory?.invoke(),
-                ipcHostApi = PluginManager.ipcHostApiFactory?.invoke(plugin.id)
+                ipcHostApi = PluginManager.ipcHostApiFactory?.invoke(plugin.id),
+                sseHostApi = PluginManager.sseHostApiFactory?.invoke(plugin.id)
             )
+            // 按能力声明启用下行事件通道：未声明 events 的插件零开销、零行为变化。
+            runtime.initEvents(plugin.capabilities?.events?.toSet() ?: emptySet())
             LoadedPluginInfo(pluginInfo = plugin, script = runtime)
         } catch (e: Exception) {
             Log.e(TAG, "loadPlugin failed for ${plugin.id}", e)
@@ -185,6 +189,11 @@ class PluginLifecycleManager(
                     )
                 PluginCategory.CLIPBOARD_SYNC ->
                     LuaClipboardSyncPluginAdapter(
+                        runtime = loadedPlugin.script ?: return null,
+                        pluginContext = pluginContext
+                    )
+                PluginCategory.TOOL ->
+                    LuaToolPluginAdapter(
                         runtime = loadedPlugin.script ?: return null,
                         pluginContext = pluginContext
                     )

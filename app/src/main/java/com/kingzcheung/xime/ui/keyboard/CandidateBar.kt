@@ -258,7 +258,7 @@ fun CandidateBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(44.dp)
             .drawPreeditBubble(
                 text = preeditBubbleText,
                 enabled = showPreeditBubble,
@@ -480,11 +480,10 @@ fun CandidateBar(
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = action.button.icon,
-                                        contentDescription = action.button.label,
+                                    ToolbarButtonIcon(
+                                        item = action.item,
                                         tint = if (isPressed) iconButtonTint.copy(alpha = 0.6f) else iconButtonTint,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(22.dp),
                                     )
                                 }
                             }

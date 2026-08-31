@@ -13,8 +13,10 @@ function plugin.getCategories()
     return { CATEGORY }
 end
 
-function plugin.getEmojis(category, searchText, topK)
+function plugin.getEmojis(query)
     local files = host.resource.list("emojis") or {}
+    local searchText = query.keyword or ""
+    local topK = query.topK or 100
     local list = {}
     local idx = 0
     for _, f in ipairs(files) do
@@ -25,17 +27,12 @@ function plugin.getEmojis(category, searchText, topK)
                 text = name,
                 insertText = "[表情" .. name .. "]",
                 imageUrl = host.resource.path("emojis/" .. f),
-                category = CATEGORY,
             })
             idx = idx + 1
         end
         if #list >= topK then break end
     end
     return list
-end
-
-function plugin.getCategoryLayoutConfig(category)
-    return { columns = 3, itemHeightDp = 110 }
 end
 
 function plugin.getIcon()

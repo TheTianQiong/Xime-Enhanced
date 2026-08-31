@@ -5,6 +5,7 @@ import com.kingzcheung.xime.plugin.core.config.PluginConfigStore
 import com.kingzcheung.xime.plugin.core.lua.sdk.LuaHostApi
 import com.kingzcheung.xime.plugin.core.lua.sdk.LuaHostApiImpl
 import com.kingzcheung.xime.plugin.core.lua.sdk.LuaPluginContract
+import com.kingzcheung.xime.plugin.core.lua.sdk.SimpleJson
 import org.luaj.vm2.Globals
 import org.luaj.vm2.LuaError
 import org.luaj.vm2.LuaString
@@ -15,9 +16,19 @@ import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.CoerceJavaToLua
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 
 /**
  * Lua 脚本插件运行时。
@@ -38,11 +49,24 @@ class LuaScriptRuntime(
     private val wsHostApi: com.kingzcheung.xime.plugin.core.lua.ws.WsHostApi? = null,
     private val httpHostApi: com.kingzcheung.xime.plugin.core.lua.http.HttpHostApi? = null,
     private val cryptoHostApi: com.kingzcheung.xime.plugin.core.lua.crypto.CryptoHostApi? = null,
-    private val ipcHostApi: com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi? = null
+    private val ipcHostApi: com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi? = null,
+    private val sseHostApi: com.kingzcheung.xime.plugin.core.lua.http.SseHostApi? = null,
+    private val callTimeoutMs: Long = CALL_TIMEOUT_MS,
+    private val callbackTimeoutMs: Long = CALLBACK_TIMEOUT_MS
 ) {
 
     companion object {
         private const val TAG = "LuaRuntime"
+
+        /** 插件业务调用（load/call/onLoad/onUnload）超时：覆盖同步 HTTP 最长 30s 与用户自定义
+         *  timeout，超时后插件被标记中毒（不再执行任何 Lua 代码，直到宿主重载插件）。 */
+        private const val CALL_TIMEOUT_MS = 180_000L
+
+        /** 网络回调（SSE/WS 事件）超时：回调应短促，恶意死循环回调会占住执行线程。 */
+        private const val CALLBACK_TIMEOUT_MS = 5_000L
+
+        /** zlib.gunzip 解压输出上限（防压缩炸弹撑爆内存）。 */
+        private const val MAX_GUNZIP_OUTPUT_BYTES = 16 * 1024 * 1024
 
         fun tableToMap(table: LuaValue): Map<String, LuaValue> {
             val result = LinkedHashMap<String, LuaValue>()
@@ -116,6 +140,27 @@ class LuaScriptRuntime(
         }
     }
 
+    /** Lua 值 → 请求体字节：字符串按 UTF-8，Lua table 序列化为 JSON，ByteArray userdata 原样。 */
+    private fun bodyToBytes(value: LuaValue): ByteArray? {
+        return when {
+            value.isnil() -> null
+            value.isstring() -> value.tojstring().toByteArray(Charsets.UTF_8)
+            value.istable() -> SimpleJson.encode(tableToJava(value)).toByteArray(Charsets.UTF_8)
+            else -> luaToBytes(value)
+        }
+    }
+
+    /** 调试日志：Lua 参数类型 + 摘要值。 */
+    private fun argTypeValue(value: LuaValue): String {
+        return when {
+            value.isnil() -> "nil"
+            value.isstring() -> "str:${value.tojstring().take(40)}"
+            value.isnumber() -> "num:${value.tojstring()}"
+            value.istable() -> "table:${tableToJava(value)}"
+            else -> value.typename()
+        }
+    }
+
     /** Lua 字符串（二进制可含 \0）或 ByteArray userdata → ByteArray。 */
     private fun luaToBytes(value: LuaValue): ByteArray? {
         if (value is LuaString) {
@@ -135,6 +180,42 @@ class LuaScriptRuntime(
     private val loadedModules = ConcurrentHashMap<String, LuaValue>()
     private val libsDir = File(pluginDir, "libs")
 
+    /**
+     * 插件 Lua 执行的专用线程：宿主 IO 协程线程池不被插件死循环耗尽。
+     * 超时后线程被弃用（Java 无法强杀死循环线程，但影响被隔离在该线程内），
+     * 插件标记中毒，后续调用直接失败，用户可在插件中心重载/卸载。
+     */
+    private val executor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "xime-lua-$pluginId").apply { isDaemon = true }
+    }
+
+    /** 插件是否已中毒（执行超时）：true 后所有 Lua 执行入口直接失败。 */
+    @Volatile
+    private var poisoned = false
+
+    /** 在专用线程内执行 Lua 代码并限时；超时返回 null（可选的调用方按失败处理）。 */
+    private fun <T> runGuarded(timeoutMs: Long, poisonOnTimeout: Boolean, block: () -> T): T? {
+        if (poisoned) return null
+        val future = executor.submit(Callable(block))
+        return try {
+            future.get(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            future.cancel(true)
+            if (poisonOnTimeout) poison()
+            null
+        } catch (e: Exception) {
+            future.cancel(true)
+            throw e
+        }
+    }
+
+    private fun poison() {
+        if (poisoned) return
+        poisoned = true
+        executor.shutdownNow()
+        api.logError("插件执行超时（疑似死循环），已停止执行该插件，请重载或卸载")
+    }
+
     /** ASR 插件后端设置的宿主结果回调（Lua 的 emit* 桥接目标）。 */
     @Volatile
     var asrResultCallback: com.kingzcheung.xime.plugin.core.api.AsrPluginListener? = null
@@ -145,16 +226,139 @@ class LuaScriptRuntime(
     private var pluginTable: LuaValue = LuaValue.NIL
     private var loaded = false
 
+    /**
+     * Lua 状态串行锁：LuaJ 的 [Globals] 非线程安全，而 SSE/WS 回调（OkHttp/OkHttp WebSocket
+     * 后台线程）与业务调用（IO 协程轮询 getPanelState 等）会并发执行同一个 Lua 状态，
+     * 竞争可导致回调执行失败（异常被静默吞掉）、Lua 变量写入丢失。
+     * 所有 Lua 执行入口必须持此锁（Java 内置锁可重入，host API 内层再回调 Lua 不会死锁）。
+     */
+    private val luaLock = Any()
+
     /** Lua 侧注册的 WS 事件回调（host.ws.connect 的 callbacks 表）。 */
     @Volatile
     private var wsCallbacks: Map<String, LuaValue>? = null
 
+    /** SSE 会话 → Lua 回调表（host.http.stream 的 callbacks），会话 id 为宿主返回句柄。 */
+    private val sseCallbacks = ConcurrentHashMap<Int, Map<String, LuaValue>>()
+
+    // ---- 下行事件（manifest capabilities.events 声明后启用） ----
+
+    /** 订阅的事件类型（小写 snake_case）；空集合 = 未启用事件通道。 */
+    @Volatile
+    private var subscribedEvents: Set<String> = emptySet()
+
+    /** 下行事件通道：conflated，只保最新，插件消费慢不积压。 */
+    private var eventChannel: Channel<PluginEvent>? = null
+
+    /** 事件消费协程域；close 时 cancel。 */
+    private var eventScope: CoroutineScope? = null
+
+    /**
+     * 声明本插件订阅的事件类型（来自 manifest capabilities.events）。
+     * 必须在 [load] 之前调用；空集合不建立通道（未声明插件零开销）。
+     */
+    fun initEvents(subscribed: Set<String>) {
+        subscribedEvents = subscribed
+        if (subscribed.isEmpty()) return
+        if (eventChannel != null) return
+        val channel = Channel<PluginEvent>(Channel.CONFLATED)
+        eventChannel = channel
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        eventScope = scope
+        scope.launch {
+            for (event in channel) {
+                invokeEventCallback(event)
+            }
+        }
+    }
+
+    /** 向插件投递事件：未声明该类型或未启用通道时静默丢弃。返回是否已投递。 */
+    fun dispatchEvent(event: PluginEvent): Boolean {
+        val channel = eventChannel ?: return false
+        if (event.type !in subscribedEvents) return false
+        return channel.trySend(event).isSuccess
+    }
+
+    /** 事件 → Lua onPluginEvent(type, payload)（网络回调同级超时，不中毒）。 */
+    private fun invokeEventCallback(event: PluginEvent) {
+        try {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) {
+                    if (!loaded) return@runGuarded
+                    val fn = pluginTable.get(LuaPluginContract.FN_ON_PLUGIN_EVENT)
+                    if (!fn.isfunction()) return@runGuarded
+                    fn.invoke(LuaValue.valueOf(event.type), payloadToLuaTable(event.payload))
+                }
+            }
+        } catch (e: Exception) {
+            api.log("onPluginEvent 回调失败: ${e.message}")
+        }
+    }
+
+    /** payload 快照 → Lua table（仅基础类型，缺失字段为 nil）。
+     *  Long 转为 double：luaj number 即 double（Lua 5.1），统计类累计值远低于 2^53 无精度损失。 */
+    private fun payloadToLuaTable(payload: Map<String, Any?>): LuaValue {
+        val table = LuaValue.tableOf()
+        for ((key, value) in payload) {
+            table.set(key, when (value) {
+                null -> LuaValue.NIL
+                is String -> LuaValue.valueOf(value)
+                is Boolean -> LuaValue.valueOf(value)
+                is Int -> LuaValue.valueOf(value)
+                is Long -> LuaValue.valueOf(value.toDouble())
+                is Double -> LuaValue.valueOf(value)
+                else -> LuaValue.valueOf(value.toString())
+            })
+        }
+        return table
+    }
+
+    /** 把 SSE 会话的流事件转发为 Lua 回调（宿主后台线程调用）。 */
+    private fun invokeSseCallback(sessionId: Int, name: String, text: String) {
+        val callbacks = sseCallbacks[sessionId] ?: return
+        val fn = callbacks[name] ?: return
+        try {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) {
+                    fn.invoke(LuaValue.valueOf(text))
+                }
+            }
+        } catch (e: Exception) {
+            api.log("host.http.stream $name 回调失败: ${e.message}")
+        }
+    }
+
     private val wsListener = object : com.kingzcheung.xime.plugin.core.lua.ws.WsHostListener {
-        override fun onOpen() { wsCallbacks?.get("onOpen")?.invoke() }
-        override fun onMessage(text: String) { wsCallbacks?.get("onMessage")?.invoke(LuaValue.valueOf(text)) }
-        override fun onBinary(data: ByteArray) { wsCallbacks?.get("onBinary")?.invoke(LuaString.valueOf(data)) }
-        override fun onError(message: String) { wsCallbacks?.get("onError")?.invoke(LuaValue.valueOf(message)) }
-        override fun onClose() { wsCallbacks?.get("onClose")?.invoke() }
+        override fun onOpen() {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) { wsCallbacks?.get("onOpen")?.invoke() }
+            }
+        }
+
+        override fun onMessage(text: String) {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) { wsCallbacks?.get("onMessage")?.invoke(LuaValue.valueOf(text)) }
+            }
+        }
+
+        override fun onBinary(data: ByteArray) {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) { wsCallbacks?.get("onBinary")?.invoke(LuaString.valueOf(data)) }
+            }
+        }
+
+        override fun onError(message: String) {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) { wsCallbacks?.get("onError")?.invoke(LuaValue.valueOf(message)) }
+            }
+        }
+
+        override fun onClose() {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                synchronized(luaLock) { wsCallbacks?.get("onClose")?.invoke() }
+            }
+            wsCallbacks = null
+        }
     }
 
     /** Lua 侧注册的 IPC（AIDL 桥）事件回调（host.ipc.connect 的 callbacks 表）。 */
@@ -189,12 +393,14 @@ class LuaScriptRuntime(
         // JsePlatform 自动配置 compiler 与 loader；随后剥离全部危险库
         val g = org.luaj.vm2.lib.jse.JsePlatform.standardGlobals()
 
-        // 危险库剥离：io/os（文件与系统调用）、luajava（Java 反射）、loadfile/dofile（任意文件加载）
+        // 危险库剥离：io/os（文件与系统调用）、luajava（Java 反射）、loadfile/dofile（任意文件加载）、
+        // debug（getregistry/getmetatable 可篡改宿主注入表与注册表，扩大攻击面）
         g.set("os", LuaValue.NIL)
         g.set("io", LuaValue.NIL)
         g.set("luajava", LuaValue.NIL)
         g.set("loadfile", LuaValue.NIL)
         g.set("dofile", LuaValue.NIL)
+        g.set("debug", LuaValue.NIL)
 
         g.set("print", luaFunction { args ->
             api.log(args.tojstring())
@@ -207,17 +413,19 @@ class LuaScriptRuntime(
             if (name.contains("/") || name.contains("\\") || name.contains("..")) {
                 throw LuaError("require 非法模块名: $name")
             }
-            synchronized(loadedModules) {
-                loadedModules[name]?.let { return@luaFunction it }
-                val moduleFile = File(libsDir, "$name.lua")
-                if (!moduleFile.exists()) {
-                    throw LuaError("module '$name' not found in libs/")
+            synchronized(luaLock) {
+                synchronized(loadedModules) {
+                    loadedModules[name]?.let { return@luaFunction it }
+                    val moduleFile = File(libsDir, "$name.lua")
+                    if (!moduleFile.exists()) {
+                        throw LuaError("module '$name' not found in libs/")
+                    }
+                    val chunk = g.load(moduleFile.readText(), "@$name")
+                    val result = chunk.call()
+                    val module = result.takeIf { it.istable() } ?: LuaValue.TRUE
+                    loadedModules[name] = module
+                    module
                 }
-                val chunk = g.load(moduleFile.readText(), "@$name")
-                val result = chunk.call()
-                val module = result.takeIf { it.istable() } ?: LuaValue.TRUE
-                loadedModules[name] = module
-                module
             }
         })
 
@@ -326,7 +534,20 @@ class LuaScriptRuntime(
         zlib.set("gunzip", luaFunction { args ->
             val data = luaToBytes(args.arg1()) ?: return@luaFunction LuaValue.NIL
             try {
-                LuaString.valueOf(GZIPInputStream(data.inputStream()).readBytes())
+                val gzipIn = GZIPInputStream(data.inputStream())
+                val buffer = ByteArray(8192)
+                val bos = ByteArrayOutputStream()
+                var total = 0
+                while (true) {
+                    val n = gzipIn.read(buffer)
+                    if (n < 0) break
+                    total += n
+                    if (total > MAX_GUNZIP_OUTPUT_BYTES) {
+                        throw IllegalStateException("gunzip 输出超过上限（${MAX_GUNZIP_OUTPUT_BYTES / 1024 / 1024}MB）")
+                    }
+                    bos.write(buffer, 0, n)
+                }
+                LuaString.valueOf(bos.toByteArray())
             } catch (e: Exception) {
                 api.log("zlib.gunzip failed: ${e.message}")
                 LuaValue.NIL
@@ -339,8 +560,10 @@ class LuaScriptRuntime(
             host.set("ws", buildWsTable())
         }
 
-        // 通用 HTTP 白名单 API（协议无关，剪贴板同步等插件使用，见 HttpHostApi）
-        if (httpHostApi != null) {
+        // 通用 HTTP 白名单 API（协议无关，剪贴板同步等插件使用，见 HttpHostApi）。
+        // 同步 request 依赖 httpHostApi，流式 stream 依赖 sseHostApi，两者各自判空注册，
+        // 因此宿主任一提供时都要挂出 host.http 表（否则只配 SSE 的插件拿不到 stream）。
+        if (httpHostApi != null || sseHostApi != null) {
             host.set("http", buildHttpTable())
         }
 
@@ -414,12 +637,12 @@ class LuaScriptRuntime(
                 headers[k] = v.tojstring()
             }
             val bodyArg = args.arg(4)
-            val body: ByteArray? = when {
-                bodyArg.isnil() -> null
-                bodyArg.isstring() -> bodyArg.tojstring().toByteArray(Charsets.UTF_8)
-                else -> luaToBytes(bodyArg)
-            }
-            val response = httpHostApi?.request(method, url, headers, body)
+            val body: ByteArray? = bodyToBytes(bodyArg)
+            Log.d("LuaHttpBridge", "[$pluginId] request(method=$method url=$url nargs=${args.narg()} bodyType=" +
+                if (bodyArg.isnil()) "nil" else bodyArg.typename() +
+                " body=${body?.toString(Charsets.UTF_8)?.take(300) ?: "<空>"}")
+            val timeoutMillis = args.arg(5).optint(0)?.takeIf { it > 0 }
+            val response = httpHostApi?.request(method, url, headers, body, timeoutMillis)
             if (response == null) {
                 CoerceJavaToLua.coerce(null)
             } else {
@@ -436,6 +659,72 @@ class LuaScriptRuntime(
         http.set("lastError", luaFunction { _ ->
             CoerceJavaToLua.coerce(httpHostApi?.lastError())
         })
+
+        // SSE 流式（异步回调模型，见 SseHostApi）。流事件经 sseCallbacks 表回调 Lua 函数。
+        if (sseHostApi != null) {
+            http.set("stream", luaFunction { args ->
+                val url = args.arg1().tojstring()
+                val headers = HashMap<String, String>()
+                LuaScriptRuntime.tableToMap(args.arg(2)).forEach { (k, v) ->
+                    headers[k] = v.tojstring()
+                }
+                val callbacks = args.arg(3)
+                val cb = HashMap<String, LuaValue>()
+                if (callbacks.istable()) {
+                    for (name in listOf("onData", "onDone", "onError")) {
+                        val fn = callbacks.get(name)
+                        if (fn.isfunction()) cb[name] = fn
+                    }
+                }
+                val arg4 = args.arg(4)
+                val arg5 = args.arg(5)
+                val arg6 = args.arg(6)
+                // 兼容多风格调用：stream(url, headers, callbacks[, timeout][, method][, body])，
+                // 也兼容 stream(url, headers, callbacks, method) 等省略 timeout/body 的写法。
+                val timeoutMillis: Int? = when {
+                    arg4.isnumber() -> arg4.toint().takeIf { it > 0 }
+                    arg5.isnumber() -> arg5.toint().takeIf { it > 0 }
+                    arg4.isstring() && arg4.tojstring().toIntOrNull() != null ->
+                        arg4.tojstring().toInt().takeIf { it > 0 }
+                    arg5.isstring() && arg5.tojstring().toIntOrNull() != null ->
+                        arg5.tojstring().toInt().takeIf { it > 0 }
+                    else -> null
+                }
+                val method: String = when {
+                    arg4.isstring() && arg4.tojstring().toIntOrNull() == null ->
+                        arg4.tojstring().uppercase()
+                    arg5.isstring() && arg5.tojstring().toIntOrNull() == null ->
+                        arg5.tojstring().uppercase()
+                    else -> "GET"
+                }
+                val body: ByteArray? = when {
+                    !arg6.isnil() -> bodyToBytes(arg6)
+                    arg5.istable() -> bodyToBytes(arg5)
+                    arg4.istable() -> bodyToBytes(arg4)
+                    else -> null
+                }
+                Log.d("LuaHttpBridge", "[$pluginId] stream(url=$url method=$method nargs=${args.narg()} " +
+                    "arg4=${argTypeValue(arg4)} arg5=${argTypeValue(arg5)} arg6=${argTypeValue(arg6)} " +
+                    "body=${body?.toString(Charsets.UTF_8)?.take(300) ?: "<空>"}")
+                var sessionId = -1
+                val listener = object : com.kingzcheung.xime.plugin.core.lua.http.SseHostListener {
+                    override fun onData(text: String) { invokeSseCallback(sessionId, "onData", text) }
+                    override fun onDone(fullText: String) { invokeSseCallback(sessionId, "onDone", fullText) }
+                    override fun onError(message: String) { invokeSseCallback(sessionId, "onError", message) }
+                }
+                sessionId = sseHostApi.connect(url, headers, listener, timeoutMillis, method, body)
+                if (sessionId >= 0) {
+                    sseCallbacks[sessionId] = cb
+                }
+                CoerceJavaToLua.coerce(sessionId)
+            })
+            http.set("closeStream", luaFunction { args ->
+                val id = args.arg1().toint()
+                sseCallbacks.remove(id)
+                sseHostApi.close(id)
+                LuaValue.NIL
+            })
+        }
         return http
     }
 
@@ -563,17 +852,22 @@ class LuaScriptRuntime(
     fun load(): Boolean {
         if (loaded) return true
         return try {
-            val entryFile = File(pluginDir, entryScript)
-            if (!entryFile.exists()) {
-                Log.e(TAG, "Entry script not found: ${entryFile.absolutePath}")
-                return false
-            }
-            val chunk = globals.load(entryFile.readText(), "@$entryScript")
-            val result = chunk.call()
-            pluginTable = result.takeIf { it.istable() } ?: LuaValue.NIL
-            loaded = true
-            Log.d(TAG, "Plugin $pluginId loaded from $entryScript")
-            true
+            runGuarded(callTimeoutMs, poisonOnTimeout = true) {
+                synchronized(luaLock) {
+                    if (loaded) return@runGuarded true
+                    val entryFile = File(pluginDir, entryScript)
+                    if (!entryFile.exists()) {
+                        Log.e(TAG, "Entry script not found: ${entryFile.absolutePath}")
+                        return@runGuarded false
+                    }
+                    val chunk = globals.load(entryFile.readText(), "@$entryScript")
+                    val result = chunk.call()
+                    pluginTable = result.takeIf { it.istable() } ?: LuaValue.NIL
+                    loaded = true
+                    Log.d(TAG, "Plugin $pluginId loaded from $entryScript")
+                    true
+                }
+            } ?: false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load Lua plugin $pluginId", e)
             false
@@ -583,9 +877,10 @@ class LuaScriptRuntime(
     fun callOnLoad() {
         if (!loaded) return
         try {
-            val fn = pluginTable.get(LuaPluginContract.FN_ON_LOAD)
-            if (fn.isfunction()) {
-                fn.invoke()
+            val fn = synchronized(luaLock) { pluginTable.get(LuaPluginContract.FN_ON_LOAD) }
+            if (!fn.isfunction()) return
+            runGuarded(callTimeoutMs, poisonOnTimeout = true) {
+                synchronized(luaLock) { fn.invoke() }
             }
         } catch (e: Exception) {
             Log.e(TAG, "onLoad failed for $pluginId", e)
@@ -595,29 +890,34 @@ class LuaScriptRuntime(
     fun callOnUnload() {
         if (!loaded) return
         try {
-            val fn = pluginTable.get(LuaPluginContract.FN_ON_UNLOAD)
-            if (fn.isfunction()) {
-                fn.invoke()
+            val fn = synchronized(luaLock) { pluginTable.get(LuaPluginContract.FN_ON_UNLOAD) }
+            if (!fn.isfunction()) return
+            runGuarded(callTimeoutMs, poisonOnTimeout = true) {
+                synchronized(luaLock) { fn.invoke() }
             }
         } catch (e: Exception) {
             Log.e(TAG, "onUnload failed for $pluginId", e)
         }
     }
 
-    /** 调用插件导出的函数，返回 LuaValue 结果；不存在或出错返回 NIL。 */
+    /** 调用插件导出的函数，返回 LuaValue 结果；不存在、出错或超时返回 NIL。 */
     fun call(name: String, vararg args: LuaValue): LuaValue {
         if (!loaded) return LuaValue.NIL
         return try {
-            val fn = pluginTable.get(name)
-            if (!fn.isfunction()) {
-                Log.w(TAG, "Plugin $pluginId does not export '$name'")
-                return LuaValue.NIL
-            }
-            if (args.isEmpty()) {
-                fn.invoke().arg1()
-            } else {
-                fn.invoke(args).arg1()
-            }
+            runGuarded(callTimeoutMs, poisonOnTimeout = true) {
+                synchronized(luaLock) {
+                    val fn = pluginTable.get(name)
+                    if (!fn.isfunction()) {
+                        Log.w(TAG, "Plugin $pluginId does not export '$name'")
+                        return@runGuarded LuaValue.NIL
+                    }
+                    if (args.isEmpty()) {
+                        fn.invoke().arg1()
+                    } else {
+                        fn.invoke(args).arg1()
+                    }
+                }
+            } ?: LuaValue.NIL
         } catch (e: Exception) {
             Log.e(TAG, "Call '$name' failed for $pluginId: ${e.message}", e)
             api.log("Call '$name' failed: ${e.message}")
@@ -629,7 +929,15 @@ class LuaScriptRuntime(
         try {
             callOnUnload()
         } finally {
+            eventScope?.cancel()
+            eventScope = null
+            eventChannel?.close()
+            eventChannel = null
+            subscribedEvents = emptySet()
+            executor.shutdownNow()
             loadedModules.clear()
+            sseCallbacks.clear()
+            wsCallbacks = null
             pluginTable = LuaValue.NIL
             loaded = false
         }

@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.ui.settings
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -93,7 +94,13 @@ fun PluginSettingsContent(
         return
     }
 
-    val schema = (pluginInstance as? IPluginConfigurable)?.getSettingsSchema().orEmpty()
+    val schema = remember(pluginInstance) {
+        runCatching { (pluginInstance as? IPluginConfigurable)?.getSettingsSchema().orEmpty() }
+            .getOrElse { e ->
+                Log.e("PluginDetailScreen", "getSettingsSchema failed for $pluginId", e)
+                emptyList()
+            }
+    }
     val hasSchema = schema.isNotEmpty()
     val hasCustomSettings = pluginInstance is EmojiPlugin && pluginInstance.hasSettings()
 
@@ -103,6 +110,7 @@ fun PluginSettingsContent(
                 pluginId = pluginId,
                 plugin = pluginInstance as IPluginConfigurable,
                 pluginName = pluginInfo.name,
+                schema = schema,
                 onBack = onBack
             )
         }

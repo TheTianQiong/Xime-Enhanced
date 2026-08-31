@@ -3,9 +3,7 @@ package com.kingzcheung.xime.plugin.core.lua.asr
 import android.util.Log
 import com.kingzcheung.xime.plugin.core.api.AsrPluginBackend
 import com.kingzcheung.xime.plugin.core.api.AsrPluginListener
-import com.kingzcheung.xime.plugin.core.api.AsrPluginState
 import com.kingzcheung.xime.plugin.core.lua.LuaScriptRuntime
-import org.luaj.vm2.LuaValue
 
 /**
  * Lua 插件 ASR 后端适配器：**全部转发插件 Lua 导出函数**。
@@ -56,7 +54,6 @@ class LuaAsrBackend(
             Log.e(logTag, "stop failed", e)
         }
         running = false
-        backendListener?.onStopped()
     }
 
     override fun cancel() {
@@ -72,14 +69,5 @@ class LuaAsrBackend(
         cancel()
         backendListener = null
         runtime.asrResultCallback = null
-    }
-
-    override fun getState(): AsrPluginState {
-        return when (runtime.call("getState").toint()) {
-            1 -> AsrPluginState.LISTENING
-            2 -> AsrPluginState.PROCESSING
-            3 -> AsrPluginState.ERROR
-            else -> AsrPluginState.IDLE
-        }
     }
 }

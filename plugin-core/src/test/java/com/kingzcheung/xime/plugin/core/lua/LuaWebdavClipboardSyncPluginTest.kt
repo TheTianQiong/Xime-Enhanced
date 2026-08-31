@@ -38,7 +38,8 @@ class LuaWebdavClipboardSyncPluginTest {
             method: String,
             url: String,
             headers: Map<String, String>,
-            body: ByteArray?
+            body: ByteArray?,
+            timeoutMillis: Int?
         ): HttpResponse? {
             requests.add(Triple(method, url, headers))
             requestBodies.add(body?.toString(Charsets.UTF_8) ?: "")

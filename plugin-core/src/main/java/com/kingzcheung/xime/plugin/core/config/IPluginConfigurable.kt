@@ -1,6 +1,6 @@
 package com.kingzcheung.xime.plugin.core.config
 
-enum class PluginFieldType { TEXT, SECRET, SELECT, MULTI_SELECT, SWITCH, NUMBER, BUTTON }
+enum class PluginFieldType { TEXT, TEXTAREA, SECRET, SELECT, MULTI_SELECT, SWITCH, NUMBER, BUTTON }
 
 data class PluginSettingField(
     val key: String,

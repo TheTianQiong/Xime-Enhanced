@@ -1,0 +1,62 @@
+# =============================================
+# Xime Lua 插件元数据（宿主用 YAML 解析）
+# =============================================
+
+# 插件唯一标识
+id: com.kingzcheung.xime.plugin.ai_reply
+
+# 插件名称与描述
+name: AI 智能回复
+icon: "应"
+description: 根据对方消息生成 3~5 条回复候选，点选上屏。支持任意 OpenAI 兼容的 chat/completions 接口。
+
+# 插件版本
+version: 0.3.0
+
+# 插件分类：tool 工具类（多开）
+type: tool
+activation: multi
+
+# 入口脚本
+entry: main.lua
+
+# 宿主最低版本要求（工具栏按钮与工具面板契约）
+minHostVersion: 2.6.2
+
+# 工具栏入口：点击打开该插件的通用面板
+toolbarButtons:
+  - id: com.kingzcheung.xime.plugin.ai_reply:open
+    label: AI 回复
+    action: open_panel
+
+# 网络访问：接受用户自定义服务器地址（baseUrl 域名自动获得联网授权）
+network:
+  allowCustomHosts: true
+
+# 配置字段（插件中心渲染表单）
+configSchema:
+  - key: apiKey
+    label: API Key
+    type: secret
+    placeholder: 输入 LLM API Key
+    helpText: OpenAI 兼容接口的 API Key
+  - key: baseUrl
+    label: 接口地址
+    type: text
+    defaultValue: https://api.openai.com/v1
+    helpText: OpenAI 兼容接口地址（/chat/completions 前缀），域名将自动获得联网授权
+  - key: model
+    label: 模型
+    type: text
+    defaultValue: gpt-4o-mini
+  - key: prompt
+    label: 回复模板
+    type: textarea
+    defaultValue: "你是我的智能回复助手。请根据对方消息生成 3~5 条简洁、自然、符合我语气的中文回复候选，每条不超过 30 字。严格按以下格式输出：只输出一个 JSON 对象，格式为 {\"candidates\": [\"好的呀\", \"马上来\", \"稍等片刻\"]}，candidates 是候选文本数组，不要编号、不要解释、不要任何其他文字。对方消息：{context}"
+    helpText: 生成候选的 prompt 模板，{context} 会被替换为对方消息
+# 能力声明
+capabilities:
+  tool:
+    # passive：宿主渲染全屏纯展示面板（InfoPanel，与表情/符号同级），
+    # ui 节点树承载"生成"入口，items 候选在面板内点选上屏（原 select 全屏结果页已并入）
+    display: passive

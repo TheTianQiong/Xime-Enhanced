@@ -60,7 +60,6 @@ import com.kingzcheung.xime.R
 import com.kingzcheung.xime.plugin.ExtensionManager
 import com.kingzcheung.xime.plugin.core.api.PluginIcon
 import com.kingzcheung.xime.plugin.core.model.PluginCategory
-import com.kingzcheung.xime.plugin.core.api.AsrInputMode
 import com.kingzcheung.xime.plugin.core.api.AsrPlugin
 import com.kingzcheung.xime.plugin.core.runtime.PluginManager
 import com.kingzcheung.xime.speech.AsrBackendFactory
@@ -110,14 +109,14 @@ fun SpeechToTextSettingsContent(
                     add(
                         AsrProvider(
                             id = info.id,
-                            name = instance.getDisplayName(),
+                            name = info.name,
                             description = "在线语音识别插件",
                             isOnline = true,
                             isConfigured = instance.isConfigured(),
                             isActive = info.id == activeAsrPluginId,
                             pluginIcon = ExtensionManager.extractPluginIcon(context, info.id, instance, info),
                             features = buildList {
-                                add(if (caps.inputMode == AsrInputMode.STREAMING) "实时流式" else "文件识别")
+                                add(if (caps.inputMode == "streaming") "实时流式" else "文件识别")
                                 if (caps.supportsPartialResults) add("中间结果")
                                 if (caps.requiresNetwork) add("在线")
                             }

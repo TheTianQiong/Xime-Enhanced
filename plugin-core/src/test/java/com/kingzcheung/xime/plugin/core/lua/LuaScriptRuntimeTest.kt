@@ -34,9 +34,14 @@ class LuaScriptRuntimeTest {
         val emojis = LuaScriptRuntime.tableToList(
             runtime.call(
                 "getEmojis",
-                org.luaj.vm2.LuaValue.valueOf(""),
-                org.luaj.vm2.LuaValue.valueOf(""),
-                org.luaj.vm2.LuaValue.valueOf(5)
+                org.luaj.vm2.LuaValue.tableOf(
+                    arrayOf<org.luaj.vm2.LuaValue>(
+                        org.luaj.vm2.LuaValue.valueOf("keyword"),
+                        org.luaj.vm2.LuaValue.valueOf(""),
+                        org.luaj.vm2.LuaValue.valueOf("topK"),
+                        org.luaj.vm2.LuaValue.valueOf(5)
+                    )
+                )
             )
         )
         assertEquals("应返回 topK=5 个", 5, emojis.size)
@@ -129,5 +134,38 @@ class LuaScriptRuntimeTest {
 
         assertEquals("A", runtimeA.call("getTag").tojstring())
         assertEquals("B", runtimeB.call("getTag").tojstring())
+    }
+
+    @Test
+    fun `infinite loop times out and poisons runtime`() {
+        val dir = File("build/lua-timeout"); dir.mkdirs()
+        val entry = File(dir, "main.lua")
+        entry.writeText("return { spin = function() while true do end end }")
+        val runtime = LuaScriptRuntime(
+            "test", dir, "main.lua", NoopPluginConfigStore,
+            callTimeoutMs = 300, callbackTimeoutMs = 300
+        )
+        runtime.load()
+
+        val start = System.currentTimeMillis()
+        val result = runtime.call("spin")
+        val elapsed = System.currentTimeMillis() - start
+        assertTrue("死循环应超时返回 nil", result.isnil())
+        assertTrue("超时应在限时附近返回", elapsed >= 200 && elapsed < 5000)
+
+        // 中毒后：后续调用立即返回 nil（不再执行 Lua 代码）
+        val second = runtime.call("spin")
+        assertTrue("中毒后调用应立即返回 nil", second.isnil())
+    }
+
+    @Test
+    fun `debug library is stripped from sandbox`() {
+        val dir = File("build/lua-debug"); dir.mkdirs()
+        val runtime = runtimeFor(
+            "return { getDebug = function() return debug.getregistry() end }",
+            dir
+        )
+        runtime.load()
+        assertTrue("debug 库应被剥离", runtime.call("getDebug").isnil())
     }
 }

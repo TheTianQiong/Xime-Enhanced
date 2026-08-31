@@ -25,6 +25,8 @@ object SettingsPreferences {
     const val KEY_SMART_PREDICTION_ENABLED = "smart_prediction_enabled"
     private const val KEY_PREDICTION_MODEL_REPO = "prediction_model_repo"
     private const val KEY_PREDICTION_SELECTED_MODEL = "prediction_selected_model"
+    private const val KEY_SPACE_COMMIT_ASSOCIATION = "space_commit_association"
+    private const val KEY_ASSOCIATION_SINGLE_MODE = "association_single_mode"
     
     const val KEY_STT_ENABLED = "stt_enabled"
     const val KEY_STT_ONLINE_PLUGIN_ID = "stt_online_plugin_id"
@@ -355,6 +357,27 @@ object SettingsPreferences {
     fun setPredictionSelectedModel(context: Context, modelId: String) {
         getPrefs(context).edit().putString(KEY_PREDICTION_SELECTED_MODEL, modelId).apply()
     }
+
+    /** 空格上屏联想候选：有联想候选时按空格键直接上屏第一个联想词（而非空格字符） */
+    fun isSpaceCommitAssociationEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_SPACE_COMMIT_ASSOCIATION, false)
+    }
+
+    fun setSpaceCommitAssociationEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SPACE_COMMIT_ASSOCIATION, enabled).apply()
+    }
+
+    /**
+     * 联想模式：false = 连续联想（联想上屏后继续推理，可连续上屏），true = 单次联想（只推理一次）。
+     * 默认连续（保持历史行为）。
+     */
+    fun isSingleAssociationMode(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_ASSOCIATION_SINGLE_MODE, false)
+    }
+
+    fun setAssociationSingleMode(context: Context, single: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_ASSOCIATION_SINGLE_MODE, single).apply()
+    }
     
     fun isSttEnabled(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_STT_ENABLED, false)
@@ -401,8 +424,10 @@ object SettingsPreferences {
     /** 授权插件访问指定域名。 */
     fun authorizePluginHost(context: Context, pluginId: String, host: String) {
         val hosts = getPluginAuthorizedHosts(context, pluginId) + host
+        val pending = getPluginPendingHosts(context, pluginId) - host
         getPrefs(context).edit()
             .putString("plugin_net_auth_$pluginId", hosts.joinToString(","))
+            .putString("plugin_net_pending_$pluginId", pending.joinToString(","))
             .apply()
     }
 
@@ -412,6 +437,27 @@ object SettingsPreferences {
         getPrefs(context).edit()
             .putString("plugin_net_auth_$pluginId", hosts.joinToString(","))
             .apply()
+    }
+
+    /** 插件运行中被拒绝访问、待用户授权的域名集合（供 UI 显眼展示并引导授权）。 */
+    fun getPluginPendingHosts(context: Context, pluginId: String): Set<String> {
+        val raw = getPrefs(context).getString("plugin_net_pending_$pluginId", "") ?: ""
+        return raw.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+    }
+
+    /** 记录插件运行中被拒绝访问的域名（去重；返回 true 表示首次记录）。 */
+    fun addPluginPendingHost(context: Context, pluginId: String, host: String): Boolean {
+        val pending = getPluginPendingHosts(context, pluginId)
+        if (host in pending) return false
+        getPrefs(context).edit()
+            .putString("plugin_net_pending_$pluginId", (pending + host).joinToString(","))
+            .apply()
+        return true
+    }
+
+    /** 清除插件的全部待授权记录。 */
+    fun clearPluginPendingHosts(context: Context, pluginId: String) {
+        getPrefs(context).edit().putString("plugin_net_pending_$pluginId", "").apply()
     }
     
     fun isSwipeUpHintsEnabled(context: Context): Boolean {

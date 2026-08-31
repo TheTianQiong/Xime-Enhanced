@@ -71,6 +71,9 @@ class XimeApplication : Application(), ImageLoaderFactory {
         PluginManager.httpHostApiFactory = { pluginId ->
             com.kingzcheung.xime.plugin.http.HttpHostApiImpl(this, pluginId)
         }
+        PluginManager.sseHostApiFactory = { pluginId ->
+            com.kingzcheung.xime.plugin.http.SseHostApiImpl(this, pluginId)
+        }
         PluginManager.cryptoHostApiFactory = {
             com.kingzcheung.xime.plugin.crypto.CryptoHostApiImpl()
         }
@@ -91,6 +94,8 @@ class XimeApplication : Application(), ImageLoaderFactory {
         KeyboardThemes.initFromConfig(this)
 
         // 从 xime.yaml 的 style 读取默认主题和显示模式
+        // color_scheme 可指定 dynamic（Material You 动态配色，仅 Android 12+，
+        // 低版本 getThemeById 自动回退到内置配色）
         SettingsPreferences.defaultKeyboardTheme = KeysConfigHelper.loadDefaultThemeId(this)
         SettingsPreferences.defaultDarkMode = KeysConfigHelper.loadDefaultDarkMode(this)
 

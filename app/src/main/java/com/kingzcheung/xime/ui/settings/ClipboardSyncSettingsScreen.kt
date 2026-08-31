@@ -162,10 +162,17 @@ fun ClipboardSyncSettingsContent(
                                     clipboardPlugins.forEach { plugin ->
                                         val pluginId = plugin.id
                                         val isActive = pluginId == selectedPluginId
+                                        val protocols = plugin.capabilities?.clipboardSync?.protocols.orEmpty()
                                         SettingsToggleItem(
                                             icon = Icons.TwoTone.Sync,
                                             title = plugin.name,
-                                            subtitle = plugin.description,
+                                            subtitle = buildString {
+                                                append(plugin.description)
+                                                if (protocols.isNotEmpty()) {
+                                                    append("\n同步协议: ")
+                                                    append(protocols.joinToString("、"))
+                                                }
+                                            },
                                             checked = isActive,
                                             onCheckedChange = { checked ->
                                                 if (checked && !isActive) {

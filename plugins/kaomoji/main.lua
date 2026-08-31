@@ -184,23 +184,20 @@ function plugin.getCategories()
     return { "颜文字" }
 end
 
-function plugin.getEmojis(category, searchText, topK)
+function plugin.getEmojis(query)
+    local searchText = query.keyword or ""
+    local topK = query.topK or 100
     local list = {}
     for i, k in ipairs(kaomojis) do
         if searchText == "" or string.find(k, searchText, 1, true) then
             table.insert(list, {
                 id = "kaomoji_" .. (i - 1),
                 text = k,
-                category = "颜文字"
             })
         end
         if #list >= topK then break end
     end
     return list
-end
-
-function plugin.getCategoryLayoutConfig(category)
-    return { columns = 3, itemHeightDp = 30 }
 end
 
 return plugin

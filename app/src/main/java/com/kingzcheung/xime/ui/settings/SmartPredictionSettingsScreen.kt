@@ -1,6 +1,7 @@
 package com.kingzcheung.xime.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -188,6 +190,57 @@ fun SmartPredictionSettingsContent(
                 })
             }
 
+            if (uiState.isEnabled) {
+                item {
+                    var spaceCommitEnabled by remember {
+                        mutableStateOf(SettingsPreferences.isSpaceCommitAssociationEnabled(context))
+                    }
+                    var singleMode by remember {
+                        mutableStateOf(SettingsPreferences.isSingleAssociationMode(context))
+                    }
+                    SettingsSection(title = "联想行为", content = {
+                        SettingsToggleItem(
+                            icon = Icons.Default.AutoAwesome,
+                            title = "空格上屏联想候选",
+                            subtitle = "有联想候选时，按空格键直接上屏第一个联想词",
+                            checked = spaceCommitEnabled,
+                            onCheckedChange = {
+                                spaceCommitEnabled = it
+                                SettingsPreferences.setSpaceCommitAssociationEnabled(context, it)
+                            }
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        AssociationModeRow(
+                            title = "连续联想",
+                            subtitle = "联想词上屏后继续推理，可连续空格上屏联想词",
+                            isSelected = !singleMode,
+                            onClick = {
+                                singleMode = false
+                                SettingsPreferences.setAssociationSingleMode(context, false)
+                            }
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        AssociationModeRow(
+                            title = "单次联想",
+                            subtitle = "联想词上屏一次后停止推理，待下次输入再联想",
+                            isSelected = singleMode,
+                            onClick = {
+                                singleMode = true
+                                SettingsPreferences.setAssociationSingleMode(context, true)
+                            }
+                        )
+                    })
+                }
+            }
+
             if (predictionModels.isNotEmpty()) {
                 item {
                     SettingsSection(title = "选择模型", content = {
@@ -290,6 +343,38 @@ fun SmartPredictionSettingsContent(
                 })
             }
         }
+    }
+}
+
+@Composable
+private fun AssociationModeRow(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        RadioButton(selected = isSelected, onClick = onClick)
     }
 }
 

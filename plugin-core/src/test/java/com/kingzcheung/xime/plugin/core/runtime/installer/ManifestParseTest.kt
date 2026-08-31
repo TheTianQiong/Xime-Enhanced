@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.plugin.core.runtime.installer
 
+import com.kingzcheung.xime.plugin.core.model.PluginToolbarButton
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -113,5 +114,145 @@ class ManifestParseTest {
         assertTrue("含斜杠非法", !InstallerManager.isValidPluginId("a/b"))
         assertTrue("超过 64 非法", !InstallerManager.isValidPluginId("a".repeat(65)))
         assertTrue("含中文非法", !InstallerManager.isValidPluginId("插件a"))
+    }
+
+    @Test
+    fun `toolbarButtons manifest 解析为按钮列表`() {
+        val content = """
+            id: ai_reply
+            name: AI 智能回复
+            type: tool
+            toolbarButtons:
+              - id: ai_reply
+                label: AI 回复
+                icon: ai_reply.png
+              - id: ai_write
+                label: AI 帮写
+                action: custom_action
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+        assertEquals("tool", config.type)
+        assertEquals(2, config.toolbarButtons.size)
+        val first = config.toolbarButtons[0]
+        assertEquals("ai_reply", first.id)
+        assertEquals("AI 回复", first.label)
+        assertEquals("ai_reply.png", first.icon)
+        assertEquals("open_panel", first.action)
+        val second = config.toolbarButtons[1]
+        assertEquals("ai_write", second.id)
+        assertEquals("AI 帮写", second.label)
+        assertEquals(null, second.icon)
+        assertEquals("custom_action", second.action)
+    }
+
+    @Test
+    fun `toolbarButtons 缺省为空列表`() {
+        val config = (InstallerManager.parseManifestContent("id: mini") as PluginParseResult.Success).config
+        assertEquals("toolbarButtons 缺省应为空", emptyList<PluginToolbarButton>(), config.toolbarButtons)
+    }
+
+    @Test
+    fun `toolbarButtons 空白 action 回落 open_panel`() {
+        val content = """
+            id: ai_reply
+            toolbarButtons:
+              - id: ai_reply
+                label: AI 回复
+                action: "   "
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+        assertEquals("open_panel", config.toolbarButtons.single().action)
+    }
+
+    @Test
+    fun `toolbarButtons 非法 id 被过滤`() {
+        val content = """
+            id: ai_reply
+            toolbarButtons:
+              - id: "a,b"
+                label: 含逗号非法
+              - id: 合法_按钮
+                label: 合法
+        """.trimIndent()
+
+        val buttons = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config.toolbarButtons
+        assertEquals(1, buttons.size)
+        assertEquals("合法_按钮", buttons[0].id)
+        assertEquals("合法", buttons[0].label)
+    }
+
+    @Test
+    fun `toolbarButtons id 合法性校验`() {
+        assertTrue("反域名按钮 id 合法", InstallerManager.isValidToolbarButtonId("com.kingzcheung.xime.plugin.ai_reply"))
+        assertTrue("含冒号命名空间合法", InstallerManager.isValidToolbarButtonId("com.kingzcheung.xime.plugin:ai_reply"))
+        assertTrue("空 id 非法", !InstallerManager.isValidToolbarButtonId(""))
+        assertTrue("含逗号非法", !InstallerManager.isValidToolbarButtonId("a,b"))
+        assertTrue("含空格非法", !InstallerManager.isValidToolbarButtonId("a b"))
+        assertTrue("含尖括号非法", !InstallerManager.isValidToolbarButtonId("a<b"))
+        assertTrue("超过 64 非法", !InstallerManager.isValidToolbarButtonId("a".repeat(65)))
+    }
+
+    @Test
+    fun `manifest 顶层 icon 解析透传`() {
+        val content = """
+            id: ai_translate
+            name: AI 翻译
+            type: tool
+            icon: 译
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+        assertEquals("译", config.icon)
+
+        val noIcon = (InstallerManager.parseManifestContent("id: mini") as PluginParseResult.Success).config
+        assertEquals("缺省 icon 为 null", null, noIcon.icon)
+    }
+
+    @Test
+    fun `非法网络域名声明被过滤`() {
+        val content = """
+            id: demo
+            network:
+              hosts:
+                - api.openai.com
+                - "*.wildcard.example.com"
+                - "http://evil.example.com/path"
+                - "169.254.169.254"
+                - ""
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+        assertEquals(
+            "仅合法域名/IPv4 保留",
+            listOf("api.openai.com", "169.254.169.254"),
+            config.declaredHosts
+        )
+    }
+
+    @Test
+    fun `网络域名合法性校验`() {
+        assertTrue("普通域名合法", InstallerManager.isValidDeclaredHost("api.openai.com"))
+        assertTrue("带连字符合法", InstallerManager.isValidDeclaredHost("my-server.example.com"))
+        assertTrue("IPv4 合法", InstallerManager.isValidDeclaredHost("192.168.1.50"))
+        assertTrue("通配符非法", !InstallerManager.isValidDeclaredHost("*.example.com"))
+        assertTrue("带协议非法", !InstallerManager.isValidDeclaredHost("https://example.com"))
+        assertTrue("带端口非法", !InstallerManager.isValidDeclaredHost("example.com:8080"))
+        assertTrue("空白非法", !InstallerManager.isValidDeclaredHost(""))
+        assertTrue("含下划线非法", !InstallerManager.isValidDeclaredHost("under_score.example.com"))
+    }
+
+    @Test
+    fun `资源路径合法性校验`() {
+        assertTrue("普通文件名合法", InstallerManager.isValidResourcePath("icon.png"))
+        assertTrue("子目录合法", InstallerManager.isValidResourcePath("icons/ai.png"))
+        assertTrue("点开头文件名合法", InstallerManager.isValidResourcePath(".hidden.png"))
+        assertTrue("空路径非法", !InstallerManager.isValidResourcePath(""))
+        assertTrue("路径穿越非法", !InstallerManager.isValidResourcePath("../xime.yaml"))
+        assertTrue("嵌套穿越非法", !InstallerManager.isValidResourcePath("icons/../../xime.yaml"))
+        assertTrue("绝对路径非法", !InstallerManager.isValidResourcePath("/etc/passwd"))
+        assertTrue("反斜杠非法", !InstallerManager.isValidResourcePath("..\\xime.yaml"))
+        assertTrue("空段非法", !InstallerManager.isValidResourcePath("icons//x.png"))
     }
 }

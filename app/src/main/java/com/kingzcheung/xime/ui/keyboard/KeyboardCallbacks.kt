@@ -33,6 +33,27 @@ data class KeyboardCallbacks(
     val onCursorMove: ((Int) -> Unit)? = null,
     val onGestureAction: ((GestureAction, String) -> Unit)? = null,
     val onUpdateToolbarButtons: ((List<String>) -> Unit)? = null,
+    /**
+     * 插件工具栏按钮点击（manifest 声明的 action，如 open_panel）触发。
+     * 宿主据此打开对应插件的通用面板。
+     */
+    val onOpenToolPanel: ((pluginId: String) -> Unit)? = null,
+    /**
+     * 通用工具面板关闭。
+     */
+    val onToolPanelClose: (() -> Unit)? = null,
+    /**
+     * 通用工具面板候选条目点击（AI 生成结果上屏，宿主处理选区替换/追加）。
+     */
+    val onToolPanelItemClick: ((com.kingzcheung.xime.plugin.core.api.PluginResultItem) -> Unit)? = null,
+    /**
+     * passive 纯展示面板的 action 节点点击（InfoPanel）：通知插件 actionId 并刷新面板数据。
+     */
+    val onToolPanelAction: ((actionId: String) -> Unit)? = null,
+    /**
+     * 通用工具面板输入框焦点变化。
+     */
+    val onToolPanelFocusChange: ((Boolean) -> Unit)? = null,
     val onKeyboardModeChange: ((Boolean) -> Unit)? = null,
     val onDismissDeploying: (() -> Unit)? = null,
     val onFloatingModeChange: ((Boolean) -> Unit)? = null,
@@ -89,4 +110,15 @@ data class KeyboardCallbacks(
      * 服务层负责上屏首位候选词或待确认英文，再由键盘层切换布局。
      */
     val onCommitCandidateBeforeModeChange: (() -> Unit)? = null,
+    /**
+     * 手写叠写自动上屏：把屏上手写尾部 [expectedTail] 替换为 [newTail]
+     * （静默上屏——不触发联想推理）。返回是否成功：
+     * 期望校验失败（用户移动过光标/退格过）返回 false 且不上屏，
+     * 调用方应重置手写尾部状态（后续识别以追加模式重建）。需在主线程调用。
+     */
+    val onHandwritingAutoCommit: ((newTail: String, expectedTail: String) -> Boolean)? = null,
+    /**
+     * 手写活动区固化（停顿/点选确认）后触发联想推理（基于已上屏文本）。
+     */
+    val onHandwritingFinalize: (() -> Unit)? = null,
 )

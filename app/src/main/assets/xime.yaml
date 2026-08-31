@@ -18,6 +18,7 @@ xime_index:
 
 style:
   # 浅色/深色模式的配色，deep 为降级后备
+  # 可选值：内置主题 id、color_schemes 中定义的 id、或 dynamic（Material You 动态配色，随壁纸取色，仅 Android 12+ 生效）
   color_scheme:
     light: lavender_purple
     dark: slate_gray
@@ -58,6 +59,13 @@ style:
 #                                                 key_text_color（图片背景看不清时建议单独配置）
 #
 color_schemes:
+  # 动态配色（Material You）：颜色由运行时从壁纸调色板派生，随壁纸变化，
+  # 仅 Android 12+（API 31+）生效，低版本不显示此方案。
+  # dynamic_color: true 时忽略静态颜色字段；style.color_scheme 可用 dynamic 引用。
+  dynamic:
+    name: "动态配色"
+    dynamic_color: true
+
   lavender_purple:
     name: "薰衣草紫"
     primary_color: 0x8F73E2

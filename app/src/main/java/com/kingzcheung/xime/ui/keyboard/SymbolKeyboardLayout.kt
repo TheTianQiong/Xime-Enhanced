@@ -30,16 +30,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kingzcheung.xime.data.RecentUsageStore
+import com.kingzcheung.xime.data.SymbolCategory
 import com.kingzcheung.xime.data.SymbolData
 import kotlinx.coroutines.launch
 
@@ -54,7 +59,15 @@ fun SymbolKeyboardLayout(
     bottomPaddingDp: Int = 0,
     modifier: Modifier = Modifier
 ) {
-    val categories = remember { SymbolData.categories }
+    val context = LocalContext.current
+    // 最近使用（LRU）：作为第一个分类页，点击符号时置顶记录
+    var recentSymbols by remember {
+        mutableStateOf(RecentUsageStore.get(context, RecentUsageStore.KEY_RECENT_SYMBOLS))
+    }
+    val displayCategories = remember(recentSymbols) {
+        listOf(SymbolCategory(name = "最近使用", id = "recentSymbols", symbols = recentSymbols)) +
+            SymbolData.categories
+    }
     // 图标按钮容器色：surface 与 primary 的混合色调（带种子色但不过于强烈）
     val iconButtonContainer = androidx.compose.ui.graphics.lerp(
         MaterialTheme.colorScheme.surface,
@@ -67,7 +80,7 @@ fun SymbolKeyboardLayout(
 
     val pagerState = rememberPagerState(
         initialPage = 0,
-        pageCount = { categories.size }
+        pageCount = { displayCategories.size }
     )
 
     Column(
@@ -112,10 +125,22 @@ fun SymbolKeyboardLayout(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                val category = categories[page]
+                val category = displayCategories[page]
                 val columns = if (isLandscape) 15 else 8
 
-                Column(
+                if (category.symbols.isEmpty()) {
+                    // 最近使用为空时的占位提示
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "暂无最近使用",
+                            color = textColor.copy(alpha = 0.5f),
+                            fontSize = 14.sp
+                        )
+                    }
+                } else Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
@@ -129,7 +154,12 @@ fun SymbolKeyboardLayout(
                             rowSymbols.forEach { symbol ->
                                 SymbolButton(
                                     symbol = symbol,
-                                    onClick = { onSelect(symbol) },
+                                    onClick = {
+                                        recentSymbols = RecentUsageStore.record(
+                                            context, RecentUsageStore.KEY_RECENT_SYMBOLS, symbol
+                                        )
+                                        onSelect(symbol)
+                                    },
                                     modifier = Modifier.weight(1f),
                                     textColor = textColor,
                                     backgroundColor = keyBgColor,
@@ -159,7 +189,7 @@ fun SymbolKeyboardLayout(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                categories.forEachIndexed { index, category ->
+                displayCategories.forEachIndexed { index, category ->
                     SymbolCategoryTab(
                         name = category.name,
                         isSelected = index == pagerState.currentPage,

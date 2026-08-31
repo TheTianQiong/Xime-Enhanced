@@ -11,7 +11,7 @@ package com.kingzcheung.xime.plugin.core.lua.http
  *   宿主侧必须在 IO 线程调用（同步引擎在 Dispatchers.IO 运行），避免阻塞主线程。
  *
  * Lua 侧注入为 `host.http`：
- *   host.http.request(method, url, headers, body) -> {status, headers, body}
+ *   host.http.request(method, url, headers, body, timeoutMillis) -> {status, headers, body}
  *   host.http.lastError()
  *
  * @see com.kingzcheung.xime.plugin.core.lua.ws.WsHostApi
@@ -25,13 +25,16 @@ interface HttpHostApi {
      * @param url     完整 URL，宿主校验域名白名单（未授权返回 null）
      * @param headers 请求头（如 Authorization、Content-Type、If-None-Match）
      * @param body    请求体（文本转 UTF-8 字节，二进制原始字节；GET 可为 null）
+     * @param timeoutMillis 覆盖默认超时（毫秒）。AI 长生成等场景可声明更长
+     *                      超时；null 使用宿主默认（connect 10s / read 30s / write 30s）
      * @return 响应；URL 被拒绝或请求失败时返回 null（用 [lastError] 读取原因）
      */
     fun request(
         method: String,
         url: String,
         headers: Map<String, String> = emptyMap(),
-        body: ByteArray? = null
+        body: ByteArray? = null,
+        timeoutMillis: Int? = null
     ): HttpResponse?
 
     /** 最近一次拒绝/失败原因（request 返回 null 时 Lua 可读取提示用户）。 */

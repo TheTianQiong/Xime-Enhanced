@@ -321,6 +321,9 @@ data class ColorSchemeEntry(
     val keyBackground: BackgroundConfig? = null,
     @SerialName("candidate_bar_background")
     val candidateBarBackground: BackgroundConfig? = null,
+    /** Material You 动态配色：忽略静态颜色字段，运行时从壁纸调色板取色（仅 Android 12+）。 */
+    @SerialName("dynamic_color")
+    val dynamicColor: Boolean = false,
 )
 
 @Serializable
@@ -804,10 +807,37 @@ object KeysConfigHelper {
             // 合并而非替换：custom 覆盖同名字题，其余保留内置主题，
             // 这样用户只需在 xime.custom.yaml 中添加自定义背景主题而不会丢失内置主题。
             colorSchemes = mergeColorSchemes(default.colorSchemes, custom.colorSchemes),
-            style = custom.style ?: default.style,
+            style = mergeStyle(default.style, custom.style),
             metadata = custom.metadata ?: default.metadata,
         )
     }
+
+    /** style 字段级深合并：custom 只覆盖显式配置的字段。 */
+    private fun mergeStyle(default: StyleConfig?, custom: StyleConfig?): StyleConfig? {
+        if (custom == null) return default
+        if (default == null) return custom
+        return StyleConfig(
+            colorScheme = mergeColorSchemeMode(default.colorScheme, custom.colorScheme),
+            darkMode = custom.darkMode ?: default.darkMode,
+        )
+    }
+
+    /** color_scheme 的 light/dark 字段级合并：custom 只覆盖显式配置的模式。 */
+    private fun mergeColorSchemeMode(
+        default: ColorSchemeModeConfig?,
+        custom: ColorSchemeModeConfig?,
+    ): ColorSchemeModeConfig? {
+        if (custom == null) return default
+        if (default == null) return custom
+        return ColorSchemeModeConfig(
+            light = custom.light ?: default.light,
+            dark = custom.dark ?: default.dark,
+        )
+    }
+
+    /** 仅供单元测试验证 style 合并逻辑。 */
+    internal fun mergeStyleForTest(default: StyleConfig?, custom: StyleConfig?): StyleConfig? =
+        mergeStyle(default, custom)
 
     private fun mergeColorSchemes(
         default: Map<String, ColorSchemeEntry>?,
@@ -840,6 +870,7 @@ object KeysConfigHelper {
                 keyboardBackground = customEntry.keyboardBackground ?: base.keyboardBackground,
                 keyBackground = customEntry.keyBackground ?: base.keyBackground,
                 candidateBarBackground = customEntry.candidateBarBackground ?: base.candidateBarBackground,
+                dynamicColor = customEntry.dynamicColor || base.dynamicColor,
             )
         }
         return result

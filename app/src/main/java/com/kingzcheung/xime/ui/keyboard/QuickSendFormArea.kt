@@ -3,10 +3,16 @@ package com.kingzcheung.xime.ui.keyboard
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -25,6 +31,7 @@ fun QuickSendFormArea(
     editingItemId: Long? = null,
     onClose: (text: String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val closeButtonBg = androidx.compose.ui.graphics.lerp(
         MaterialTheme.colorScheme.surface,
@@ -41,7 +48,18 @@ fun QuickSendFormArea(
         closeButtonColor = accentColor,
         title = title,
         titleColor = textColor,
+        modifier = modifier
+            .onGloballyPositioned {
+                android.util.Log.d("QuickSendForm", "formArea bounds=${it.boundsInWindow()} size=${it.size}")
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    android.util.Log.d("QuickSendForm", "formTouch pos=${down.position}")
+                }
+            },
         onCloseClick = {
+            android.util.Log.d("QuickSendForm", "closeClick: holder=${QuickSendFormEditTextHolder.editText != null}")
             val et = QuickSendFormEditTextHolder.editText
             onClose(et?.text?.toString() ?: "")
         },

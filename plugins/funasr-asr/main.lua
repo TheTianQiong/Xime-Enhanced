@@ -22,25 +22,8 @@ local prebuffer = {}
 
 -- ================= 元信息 =================
 
-function plugin.getProviderId()
-    return "funasr"
-end
-
-function plugin.getDisplayName()
-    return "阿里百炼 FunAsr"
-end
-
 function plugin.getIcon()
     return { assetName = "icon.png" }
-end
-
-function plugin.getCapabilities()
-    return {
-        inputMode = "streaming",
-        supportsPartialResults = true,
-        maxRecordDurationMillis = 10 * 60 * 1000,
-        requiresNetwork = true,
-    }
 end
 
 function plugin.isConfigured()
@@ -200,10 +183,6 @@ function plugin.cancel()
     taskId = ""
     audioReady = false
     prebuffer = {}
-end
-
-function plugin.getState()
-    return 0
 end
 
 return plugin
