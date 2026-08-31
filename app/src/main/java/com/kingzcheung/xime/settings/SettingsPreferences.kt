@@ -735,6 +735,10 @@ object SettingsPreferences {
 
     const val KEY_SMS_CODE_ENABLED = "sms_code_enabled"
     const val KEY_SMS_AUTO_COPY = "sms_auto_copy"
+    const val KEY_SMS_CODE_TTL_SECONDS = "sms_code_ttl_seconds"
+
+    /** 验证码有效期默认值（秒）：只显示最近 1 分钟内的验证码，超时自动消失。 */
+    const val DEFAULT_SMS_CODE_TTL_SECONDS = 60L
 
     /** 短信验证码功能总开关（默认关闭）。 */
     fun isSmsCodeEnabled(context: Context): Boolean {
@@ -752,5 +756,15 @@ object SettingsPreferences {
 
     fun setSmsAutoCopyEnabled(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_SMS_AUTO_COPY, enabled).apply()
+    }
+
+    /** 验证码有效期（秒）：仅显示接收时间在有效期内（默认 60s）的验证码。 */
+    fun getSmsCodeTtlSeconds(context: Context): Long {
+        return getPrefs(context).getLong(KEY_SMS_CODE_TTL_SECONDS, DEFAULT_SMS_CODE_TTL_SECONDS)
+            .coerceIn(10L, 600L)
+    }
+
+    fun setSmsCodeTtlSeconds(context: Context, seconds: Long) {
+        getPrefs(context).edit().putLong(KEY_SMS_CODE_TTL_SECONDS, seconds.coerceIn(10L, 600L)).apply()
     }
 }

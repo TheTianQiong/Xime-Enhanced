@@ -29,6 +29,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.kingzcheung.xime.handwriting.HandwritingCandidate
 import com.kingzcheung.xime.keyboard.KeyboardPage
 import com.kingzcheung.xime.rime.RimeEngine
@@ -308,27 +310,23 @@ fun KeyboardView(
                 )
             }
 
-            // ── 短信验证码快捷插入（需授予短信权限并开启「短信验证码获取」）──
+            // ── 短信验证码（需授予短信权限并开启「短信验证码获取」）──
+            // 显示在真实候选栏内（分割线分隔），键盘整体不动；TTL 超时后自动消失。
             val smsContext = LocalContext.current
             LaunchedEffect(Unit) { SmsCodeStore.init(smsContext) }
             val smsCodes by SmsCodeStore.codes.collectAsStateWithLifecycle()
             val smsFeatureEnabled = SettingsPreferences.isSmsCodeEnabled(smsContext)
-            val latestSmsCode = if (smsFeatureEnabled) smsCodes.firstOrNull() else null
-            if (latestSmsCode != null) {
-                SmsCodeQuickBar(
-                    code = latestSmsCode.code,
-                    textColor = candidateTextColor,
-                    accentColor = accentColor,
-                    backgroundColor = keyBgColor.copy(alpha = 0.55f),
-                    onInsert = {
-                        callbacks.onCommitText?.invoke(latestSmsCode.code)
-                        SmsCodeStore.consume(smsContext, latestSmsCode.code)
-                    },
-                    onDismiss = {
-                        SmsCodeStore.consume(smsContext, latestSmsCode.code)
-                    },
-                )
+            var smsNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(smsFeatureEnabled) {
+                while (smsFeatureEnabled) {
+                    delay(1000)
+                    smsNow = System.currentTimeMillis()
+                }
             }
+            val smsTtlMillis = SettingsPreferences.getSmsCodeTtlSeconds(smsContext) * 1000L
+            val latestSmsCode = if (smsFeatureEnabled) {
+                smsCodes.firstOrNull { smsNow - it.timestamp <= smsTtlMillis }
+            } else null
 
             // ACTIVE 输入面板在候选栏上方（需要 EditText 输入，保留候选栏可见）；
             // PASSIVE 纯展示面板走 Overlay 全屏（KeyboardView 底部 Overlay 分支渲染 InfoPanel）
@@ -499,6 +497,13 @@ fun KeyboardView(
                         }
                     },
                 ),
+                smsCode = latestSmsCode?.code,
+                onSmsCodeClick = latestSmsCode?.let { entry ->
+                    {
+                        callbacks.onCommitText?.invoke(entry.code)
+                        SmsCodeStore.consume(smsContext, entry.code)
+                    }
+                },
                 inlineSuggestions = inlineSuggestions,
             )
 

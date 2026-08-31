@@ -79,6 +79,7 @@ fun PermissionManagerContent(
 
     var smsEnabled by remember { mutableStateOf(SettingsPreferences.isSmsCodeEnabled(context)) }
     var autoCopy by remember { mutableStateOf(SettingsPreferences.isSmsAutoCopyEnabled(context)) }
+    var smsTtlSeconds by remember { mutableStateOf(SettingsPreferences.getSmsCodeTtlSeconds(context).toString()) }
     var smsRegex by remember { mutableStateOf(SmsCodePluginConfig.getRegex(context) ?: "") }
 
     Column(modifier = modifier) {
@@ -128,6 +129,25 @@ fun PermissionManagerContent(
                 autoCopy = it
                 SettingsPreferences.setSmsAutoCopyEnabled(context, it)
             },
+        )
+
+        OutlinedTextField(
+            value = smsTtlSeconds,
+            onValueChange = { input ->
+                smsTtlSeconds = input.filter { it.isDigit() }.take(3)
+                smsTtlSeconds.toLongOrNull()?.let { SettingsPreferences.setSmsCodeTtlSeconds(context, it) }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            label = { Text("验证码有效期（秒）") },
+            placeholder = { Text("60") },
+            supportingText = {
+                Text("仅显示最近该秒数内收到的验证码（10–600 秒），超时自动消失。")
+            },
+            singleLine = true,
+            enabled = smsEnabled,
+            textStyle = MaterialTheme.typography.bodyMedium,
         )
 
         OutlinedTextField(

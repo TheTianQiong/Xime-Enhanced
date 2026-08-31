@@ -113,6 +113,9 @@ fun CandidateBar(
     voiceSpectrum: FloatArray = FloatArray(16),
     voiceRecognitionState: RecognitionState = RecognitionState.IDLE,
     voicePluginName: String = "",
+    /** 短信验证码：非空时在候选行内以分割线分隔显示，点击回调 [onSmsCodeClick]。 */
+    smsCode: String? = null,
+    onSmsCodeClick: (() -> Unit)? = null,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = !isFloatingMode && configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -452,6 +455,30 @@ fun CandidateBar(
                         fontSize = candidateTextSize.sp
                     )
                 }
+
+                // 短信验证码：作为候选栏内的一项显示（分割线分隔，键盘整体不动）
+                if (smsCode != null) {
+                    if (displayCandidates.isNotEmpty() || displayAssociation.isNotEmpty()) {
+                        item(key = "sms-divider") {
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(20.dp)
+                                    .background(visuals.dividerColor.copy(alpha = 0.5f))
+                                    .padding(horizontal = 4.dp)
+                            )
+                        }
+                    }
+                    val smsCodeText = smsCode
+                    item(key = "sms-code") {
+                        SmsCodeCandidateItem(
+                            code = smsCodeText,
+                            textColor = visuals.textColor,
+                            accentColor = visuals.accentColor,
+                            onClick = onSmsCodeClick,
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -646,6 +673,46 @@ fun CandidateItem(
                 maxLines = 1
             )
         }
+    }
+}
+
+/**
+ * 候选栏内的短信验证码项：小号「验证码」标签 + 加粗验证码（强调色），
+ * 点击回调插入上屏；非空点击回调时以浅强调色底提示可点。
+ */
+@Composable
+fun SmsCodeCandidateItem(
+    code: String,
+    textColor: Color,
+    accentColor: Color,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                if (onClick != null) accentColor.copy(alpha = 0.15f)
+                else Color.Transparent
+            )
+            .clickable(enabled = onClick != null, onClick = onClick ?: {})
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "验证码",
+            color = textColor.copy(alpha = 0.55f),
+            fontSize = 11.sp,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = code,
+            color = accentColor,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 
