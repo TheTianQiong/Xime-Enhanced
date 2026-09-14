@@ -4,6 +4,7 @@ import com.kingzcheung.xime.util.FileLogger
 import android.content.Context
 import android.util.Log
 import com.kingzcheung.xime.BuildConfig
+import com.kingzcheung.xime.settings.ChineseSymbolPreferences
 import com.kingzcheung.xime.settings.PersonalDictManager
 import com.kingzcheung.xime.settings.SchemaConfigHelper
 import com.kingzcheung.xime.settings.SchemaManifestManager
@@ -324,19 +325,24 @@ object RimeConfigHelper {
     private fun syncBuiltinDefaultCustom(context: Context, targetDir: File) {
         val target = File(targetDir, ASSETS_DEFAULT_CUSTOM)
         val pageSize = SettingsPreferences.getPageSize(context).coerceAtLeast(1)
+        // 用户在「中文符号自定义」中覆盖的方案标点（写入 punctuator.full_shape）
+        val punctOverrides = ChineseSymbolPreferences.getPunctuationOverrides(context)
         try {
             if (!target.exists()) {
                 copyAssetFile(context, ASSETS_DEFAULT_CUSTOM, target)
                 // 模板基线（20）与用户设置不一致时（如 slider 调过）以设置为准
-                val aligned = patchDefaultCustomContent(target.readText(), pageSize)
-                if (aligned != null) {
-                    target.writeText(aligned)
-                }
+                val current = target.readText()
+                val aligned = patchDefaultCustomContent(current, pageSize) ?: current
+                target.writeText(PunctuatorPatch.apply(aligned, punctOverrides))
                 return
             }
-            val patched = patchDefaultCustomContent(target.readText(), pageSize) ?: return
-            target.writeText(patched)
-            Log.i(TAG, "Aligned ${target.name} menu/page_size=$pageSize")
+            val current = target.readText()
+            val aligned = patchDefaultCustomContent(current, pageSize) ?: current
+            val updated = PunctuatorPatch.apply(aligned, punctOverrides)
+            if (updated != current) {
+                target.writeText(updated)
+                Log.i(TAG, "Aligned ${target.name} menu/page_size=$pageSize")
+            }
         } catch (e: IOException) {
             FileLogger.e(TAG, "Failed to sync $ASSETS_DEFAULT_CUSTOM", e)
         }

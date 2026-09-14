@@ -48,6 +48,7 @@ fun ChineseSymbolSettingsContent(
     var row2 by remember { mutableStateOf(ChineseSymbolPreferences.getRow2(context)) }
     var row3 by remember { mutableStateOf(ChineseSymbolPreferences.getRow3(context)) }
     var swipeOverrides by remember { mutableStateOf(ChineseSymbolPreferences.getSwipeOverrides(context)) }
+    var punctOverrides by remember { mutableStateOf(ChineseSymbolPreferences.getPunctuationOverrides(context)) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -69,6 +70,7 @@ fun ChineseSymbolSettingsContent(
                         row2 = ChineseSymbolPreferences.DEFAULT_ROW2
                         row3 = ChineseSymbolPreferences.DEFAULT_ROW3
                         swipeOverrides = emptyMap()
+                        punctOverrides = emptyMap()
                     }) {
                         Text("恢复默认")
                     }
@@ -137,10 +139,14 @@ fun ChineseSymbolSettingsContent(
 
             item {
                 SettingsSection(title = "键盘上滑 · 中文") {
-                    SwipeSlots(
+                    OverrideSlots(
                         keys = ChineseSymbolPreferences.SWIPE_KEYS,
-                        defaults = ChineseSymbolPreferences.DEFAULT_SWIPE,
+                        labelOf = { i ->
+                            "${ChineseSymbolPreferences.SWIPE_KEYS[i]} 键 · 默认 " +
+                                ChineseSymbolPreferences.DEFAULT_SWIPE.getOrElse(i) { "" }
+                        },
                         overrides = swipeOverrides,
+                        maxChars = 1,
                         onValueChange = { key, char ->
                             if (char.isEmpty()) {
                                 ChineseSymbolPreferences.removeSwipeOverride(context, key)
@@ -148,6 +154,41 @@ fun ChineseSymbolSettingsContent(
                             } else {
                                 ChineseSymbolPreferences.setSwipeOverride(context, key, char)
                                 swipeOverrides = swipeOverrides + (key to char)
+                            }
+                        },
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    text = "方案中文标点：写入 default.custom.yaml 的 punctuator.full_shape，" +
+                        "决定中文模式下 ASCII 标点转成哪个全角标点，影响所有 " +
+                        "import_preset: default 的方案（含雾凇拼音）。" +
+                        "留空表示沿用方案默认；修改后需重新部署方案才会生效。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+
+            item {
+                SettingsSection(title = "方案中文标点") {
+                    OverrideSlots(
+                        keys = ChineseSymbolPreferences.PUNCT_KEYS,
+                        labelOf = { i ->
+                            "${ChineseSymbolPreferences.PUNCT_KEYS[i]} · 默认 " +
+                                ChineseSymbolPreferences.DEFAULT_PUNCT.getOrElse(i) { "" }
+                        },
+                        overrides = punctOverrides,
+                        maxChars = 4,
+                        onValueChange = { key, text ->
+                            if (text.isEmpty()) {
+                                ChineseSymbolPreferences.removePunctuationOverride(context, key)
+                                punctOverrides = punctOverrides - key
+                            } else {
+                                ChineseSymbolPreferences.setPunctuationOverride(context, key, text)
+                                punctOverrides = punctOverrides + (key to text)
                             }
                         },
                     )
@@ -230,14 +271,15 @@ private fun SymbolSlot(
 }
 
 /**
- * 上滑手势位网格：标注按键名与该位的方案默认字符，
+ * 覆盖位网格（键盘上滑 / 方案标点共用）：每位显示标签与该位的方案默认值，
  * 输入框留空即表示沿用方案默认（不写覆盖值）。
  */
 @Composable
-private fun SwipeSlots(
+private fun OverrideSlots(
     keys: List<String>,
-    defaults: List<String>,
+    labelOf: (Int) -> String,
     overrides: Map<String, String>,
+    maxChars: Int,
     onValueChange: (String, String) -> Unit,
 ) {
     Column(
@@ -253,10 +295,10 @@ private fun SwipeSlots(
             ) {
                 indices.forEach { index ->
                     val key = keys[index]
-                    SwipeSlot(
-                        keyName = key,
-                        defaultValue = defaults.getOrElse(index) { "" },
+                    OverrideSlot(
+                        label = labelOf(index),
                         value = overrides[key].orEmpty(),
+                        maxChars = maxChars,
                         onValueChange = { input -> onValueChange(key, input) },
                         modifier = Modifier.weight(1f),
                     )
@@ -269,12 +311,12 @@ private fun SwipeSlots(
     }
 }
 
-/** 单个上滑位：按键名 + 方案默认字符 + 覆盖输入框（限 1 个字符，清空即取消覆盖）。 */
+/** 单个覆盖位：标签 + 覆盖输入框（限 [maxChars] 个字符，清空即取消覆盖）。 */
 @Composable
-private fun SwipeSlot(
-    keyName: String,
-    defaultValue: String,
+private fun OverrideSlot(
+    label: String,
     value: String,
+    maxChars: Int,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -283,14 +325,14 @@ private fun SwipeSlot(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "$keyName 键 · 默认 $defaultValue",
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
         OutlinedTextField(
             value = value,
-            onValueChange = { input -> onValueChange(input.take(1)) },
+            onValueChange = { input -> onValueChange(input.take(maxChars)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             textStyle = MaterialTheme.typography.titleMedium,

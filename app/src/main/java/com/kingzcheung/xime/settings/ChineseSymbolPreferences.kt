@@ -36,9 +36,22 @@ object ChineseSymbolPreferences {
         "＊", "＠", "、", "？", "！", "％", "＃", "。",
     )
 
+    /** 可自定义的方案中文标点：ASCII 输入键，与 [DEFAULT_PUNCT] 一一对应。 */
+    val PUNCT_KEYS = listOf(
+        "~", "/", "-", "*", "%", "#", "!", "@", "$", "&",
+        "_", "+", "(", ")", ":", ";", ",", ".", "?", "^",
+    )
+
+    /** 方案 full_shape 的默认中文标点，仅用于设置页展示「当前默认」。 */
+    val DEFAULT_PUNCT = listOf(
+        "～", "／", "－", "＊", "％", "＃", "！", "＠", "￥", "＆",
+        "——", "＋", "（", "）", "：", "；", "，", "。", "？", "……",
+    )
+
     private const val KEY_ROW2 = "cn_symbol_row2"
     private const val KEY_ROW3 = "cn_symbol_row3"
     private const val KEY_SWIPE = "cn_symbol_swipe"
+    private const val KEY_PUNCT = "cn_symbol_punct"
 
     /** 单元分隔符（U+001F）：正常符号不会包含，避免与符号本身冲突。 */
     private val SEPARATOR = 0x1F.toChar().toString()
@@ -72,14 +85,14 @@ object ChineseSymbolPreferences {
     fun setSwipeOverride(context: Context, key: String, char: String) {
         val map = getSwipeOverrides(context).toMutableMap()
         map[key.lowercase()] = char
-        saveSwipeOverrides(context, map)
+        savePairs(context, KEY_SWIPE, map)
     }
 
     /** 清除某个键的覆盖，回到方案默认。 */
     fun removeSwipeOverride(context: Context, key: String) {
         val map = getSwipeOverrides(context).toMutableMap()
         map.remove(key.lowercase())
-        saveSwipeOverrides(context, map)
+        savePairs(context, KEY_SWIPE, map)
     }
 
     /**
@@ -89,19 +102,40 @@ object ChineseSymbolPreferences {
     fun swipeUpOverride(context: Context, key: String, isAsciiMode: Boolean): String? =
         if (isAsciiMode) null else getSwipeOverrides(context)[key.lowercase()]
 
-    private fun saveSwipeOverrides(context: Context, map: Map<String, String>) {
+    // ── 方案中文标点覆盖（写入 default.custom.yaml 的 punctuator.full_shape）──
+    // 方案的 full_shape 决定中文模式下 ASCII 标点转成哪个全角标点，
+    // 影响所有 import_preset: default 的方案（含雾凇拼音）。
+
+    /** ASCII 输入键 → 覆盖后的中文标点（仅含已覆盖项）。 */
+    fun getPunctuationOverrides(context: Context): Map<String, String> =
+        decodePairs(SettingsPreferences.getPrefsPublic(context).getString(KEY_PUNCT, null))
+
+    fun setPunctuationOverride(context: Context, key: String, text: String) {
+        val map = getPunctuationOverrides(context).toMutableMap()
+        map[key] = text
+        savePairs(context, KEY_PUNCT, map)
+    }
+
+    fun removePunctuationOverride(context: Context, key: String) {
+        val map = getPunctuationOverrides(context).toMutableMap()
+        map.remove(key)
+        savePairs(context, KEY_PUNCT, map)
+    }
+
+    private fun savePairs(context: Context, prefKey: String, map: Map<String, String>) {
         val text = encodePairs(map)
         SettingsPreferences.getPrefsPublic(context).edit().apply {
-            if (text.isEmpty()) remove(KEY_SWIPE) else putString(KEY_SWIPE, text)
+            if (text.isEmpty()) remove(prefKey) else putString(prefKey, text)
         }.apply()
     }
 
-    /** 恢复默认（含上滑覆盖）。 */
+    /** 恢复默认（含上滑与方案标点覆盖）。 */
     fun reset(context: Context) {
         SettingsPreferences.getPrefsPublic(context).edit()
             .remove(KEY_ROW2)
             .remove(KEY_ROW3)
             .remove(KEY_SWIPE)
+            .remove(KEY_PUNCT)
             .apply()
     }
 
@@ -109,7 +143,8 @@ object ChineseSymbolPreferences {
     fun isCustomized(context: Context): Boolean =
         getRow2(context) != DEFAULT_ROW2 ||
             getRow3(context) != DEFAULT_ROW3 ||
-            getSwipeOverrides(context).isNotEmpty()
+            getSwipeOverrides(context).isNotEmpty() ||
+            getPunctuationOverrides(context).isNotEmpty()
 
     private fun update(
         context: Context,

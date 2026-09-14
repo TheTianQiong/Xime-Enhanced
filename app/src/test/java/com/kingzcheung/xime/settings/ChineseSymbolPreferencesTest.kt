@@ -109,6 +109,15 @@ class ChineseSymbolPreferencesTest {
     }
 
     @Test
+    fun `方案标点键与默认值数量一致`() {
+        // 设置页按下标对齐展示「键 · 默认值」，数量不一致会错位
+        assertEquals(
+            ChineseSymbolPreferences.PUNCT_KEYS.size,
+            ChineseSymbolPreferences.DEFAULT_PUNCT.size,
+        )
+    }
+
+    @Test
     fun `上滑覆盖表编码后可完整还原`() {
         val overrides = mapOf("a" to "～", "s" to "／", "m" to "＃")
         assertEquals(
