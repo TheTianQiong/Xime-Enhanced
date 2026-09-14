@@ -27,39 +27,26 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import com.kingzcheung.xime.keyboard.KeyboardDimensions
+import com.kingzcheung.xime.settings.ChineseSymbolPreferences
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** 符号键：同一键在中文模式输出全角、英文模式输出半角（per-key 模型） */
 internal data class SymbolKey(val full: String, val ascii: String)
 
-private val row2Keys = listOf(
-    SymbolKey("＠", "@"),
-    SymbolKey("＃", "#"),
-    SymbolKey("＄", "$"),
-    SymbolKey("＆", "&"),
-    SymbolKey("＿", "_"),
-    SymbolKey("－", "-"),
-    SymbolKey("＋", "+"),
-    SymbolKey("（", "("),
-    SymbolKey("）", ")"),
-    SymbolKey("／", "/"),
-)
-
-private val row3Keys = listOf(
-    SymbolKey("＊", "*"),
-    SymbolKey("，", ","),
-    SymbolKey("“", "\""),
-    SymbolKey("’", "'"),
-    SymbolKey("。", "."),
-    SymbolKey("！", "!"),
-    SymbolKey("？", "?"),
-)
-
 /** 当前模式下的显示/输出字符 */
 private fun SymbolKey.resolve(asciiMode: Boolean): String = if (asciiMode) ascii else full
+
+/**
+ * 组装符号键表：中文（全角）字符取自 [ChineseSymbolPreferences]（用户可在
+ * 「外观与交互 → 布局与显示 → 按键手势 → 中文符号自定义」中逐位修改），
+ * 英文（半角）字符固定不变——即「只改中文环境字符」。
+ */
+private fun symbolKeys(cnChars: List<String>, asciiChars: List<String>): List<SymbolKey> =
+    cnChars.zip(asciiChars) { cn, ascii -> SymbolKey(cn, ascii) }
 
 @Composable
 fun CommonSymbolKeyboardLayout(
@@ -112,6 +99,17 @@ fun CommonSymbolKeyboardLayout(
         accentColor = specialKeyTextColor,
         keyWidth = if (swipeBubble.state.isSwiping || swipeBubble.state.isPressed) swipeBubble.keyBounds.width else 0f,
         keyboardWidth = keyboardBounds.width,
+    )
+
+    // 中文（全角）字符每次读取，保证从设置页修改后返回键盘即生效；英文（半角）固定不变。
+    val symbolContext = LocalContext.current
+    val row2Keys = symbolKeys(
+        ChineseSymbolPreferences.getRow2(symbolContext),
+        ChineseSymbolPreferences.ASCII_ROW2,
+    )
+    val row3Keys = symbolKeys(
+        ChineseSymbolPreferences.getRow3(symbolContext),
+        ChineseSymbolPreferences.ASCII_ROW3,
     )
 
     CompositionLocalProvider(LocalKeyCornerRadius provides keyCornerRadius) {

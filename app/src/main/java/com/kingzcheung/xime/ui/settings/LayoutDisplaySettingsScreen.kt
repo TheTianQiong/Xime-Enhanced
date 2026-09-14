@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.twotone.Straighten
+import androidx.compose.material.icons.twotone.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -40,7 +41,8 @@ import com.kingzcheung.xime.settings.SettingsPreferences
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LayoutDisplaySettingsContent(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToChineseSymbol: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -362,6 +364,18 @@ fun LayoutDisplaySettingsContent(
                             }
                         )
                     }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 16.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    SettingsItem(
+                        icon = Icons.TwoTone.TextFields,
+                        title = "中文符号自定义",
+                        subtitle = "修改中文环境下的全角符号，英文环境保持默认",
+                        onClick = onNavigateToChineseSymbol,
+                        showArrow = true,
+                    )
                 })
             }
 

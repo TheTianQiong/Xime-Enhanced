@@ -159,8 +159,12 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.LayoutDisplay) {
             LayoutDisplaySettingsContent(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToChineseSymbol = { navController.navigate(SettingsRoutes.ChineseSymbol) },
             )
+        }
+        composable(SettingsRoutes.ChineseSymbol) {
+            ChineseSymbolSettingsContent(onBack = { navController.popBackStack() })
         }
         composable(SettingsRoutes.SmartPrediction) {
             SmartPredictionSettingsContent(
