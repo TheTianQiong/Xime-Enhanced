@@ -29,10 +29,7 @@ class LuaToolPluginAdapter(
         val map = LuaScriptRuntime.tableToMap(result)
         val input = map["inputText"]?.tojstring()?.takeIf { it.isNotBlank() } ?: inputText
         val uiRaw = map["ui"]
-        val ui = if (uiRaw != null && uiRaw.istable()) {
-            @Suppress("UNCHECKED_CAST")
-            (LuaScriptRuntime.tableToJava(uiRaw) as? List<Map<*, *>>)
-        } else null
+        val ui = if (uiRaw != null && uiRaw.istable()) parseUiNodes(uiRaw) else null
         return ToolPanelState(
             inputText = input,
             items = parseResultItems(map["items"] ?: LuaValue.NIL, "getPanelState.items"),

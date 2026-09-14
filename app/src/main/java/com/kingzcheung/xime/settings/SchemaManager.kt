@@ -751,12 +751,27 @@ object SchemaManager {
         return result.joinToString("\n")
     }
 
+    /** 内置方案（保持默认启用顺序）。 */
+    internal val BUILTIN_SCHEMAS = listOf("wubi86", "wubi86_pinyin", "pinyin_simp", "t9_pinyin")
+
+    /**
+     * 内置方案补齐（纯函数）：用户启用列表尾部按 [BUILTIN_SCHEMAS] 顺序追加缺失项，
+     * 用户已有顺序与选择保持不变；无缺失时原样返回。
+     *
+     * 背景：老版本升级用户的 custom.yaml 早于新内置方案（如 t9_pinyin）创建，
+     * 列表里没有它 → 方案永不部署 → 切九键引擎侧静默失败（按键无候选）。
+     */
+    internal fun mergeBuiltinSchemas(enabled: List<String>): List<String> {
+        val missing = BUILTIN_SCHEMAS.filter { it !in enabled }
+        return if (missing.isEmpty()) enabled else enabled + missing
+    }
+
     fun getEnabledSchemas(context: Context): List<String> {
         val customFile = getCustomYamlFile(context)
         if (!customFile.exists()) {
-            val defaultBuiltIn = listOf("wubi86", "wubi86_pinyin", "pinyin_simp", "t9_pinyin")
-            setEnabledSchemas(context, defaultBuiltIn)
-            return defaultBuiltIn
+            setEnabledSchemas(context, BUILTIN_SCHEMAS)
+            SettingsPreferences.setBuiltinSchemasMerged(context, true)
+            return BUILTIN_SCHEMAS
         }
 
         try {
@@ -778,28 +793,80 @@ object SchemaManager {
                     }
                 }
             }
-            if (schemas.isNotEmpty()) return schemas
+            if (schemas.isNotEmpty()) {
+                // 内置方案补齐只执行一次（新版本首次运行，治老版本升级残留：
+                // 列表无 t9_pinyin → 方案永不部署 → 切九键静默失败）。之后用户
+                // 在方案管理中移除内置方案是有效选择，不得每次读取强行补回。
+                // 补齐写回后 schema_list 计入部署 hash、build 产物按方案校验，
+                // 缺失的方案会自动触发重部署。
+                val merged = if (SettingsPreferences.isBuiltinSchemasMerged(context)) {
+                    schemas
+                } else {
+                    val m = mergeBuiltinSchemas(schemas)
+                    if (m != schemas) {
+                        setEnabledSchemas(context, m)
+                    }
+                    SettingsPreferences.setBuiltinSchemasMerged(context, true)
+                    m
+                }
+                return merged
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to read custom.yaml", e)
         }
 
-        return listOf("wubi86", "wubi86_pinyin", "pinyin_simp", "t9_pinyin")
+        return BUILTIN_SCHEMAS
     }
 
     fun setEnabledSchemas(context: Context, schemaIds: List<String>) {
+        val customFile = getCustomYamlFile(context)
+        if (!customFile.exists()) {
+            // 首次写入以 app 固定模板为基底（含 menu/page_size 等默认 patch），
+            // 不再把整文件重写成只剩 schema_list 的空壳——那会丢掉 default.custom.yaml
+            // 的全部补丁（menu/page_size 丢失后每页候选数漂移回引擎兜底值 5）
+            if (!copyBuiltinDefaultCustom(context, customFile)) {
+                // 模板复制失败兜底：保留旧行为，至少保证文件存在（getEnabledSchemas
+                // 以文件存在为前提）且 schema_list 有效
+                writeSchemaListOnlyCustom(customFile, schemaIds)
+                applyEnabledSchemasToDefaultYaml(context, schemaIds)
+                return
+            }
+        }
+        // 只替换 schema_list 块，保留 menu/switcher/key_binder 等其余 patch
+        try {
+            val text = customFile.readText()
+            val updated = replaceSchemaListBlock(text, schemaIds)
+            if (updated != text) {
+                customFile.writeText(updated)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write custom.yaml schema_list", e)
+        }
+        // F1: 同步写进 default.yaml，确保 librime 真正编译启用的方案
+        applyEnabledSchemasToDefaultYaml(context, schemaIds)
+    }
+
+    private fun writeSchemaListOnlyCustom(customFile: File, schemaIds: List<String>) {
         val sb = StringBuilder()
         sb.appendLine("patch:")
         sb.appendLine("  schema_list:")
         for (id in schemaIds) {
             sb.appendLine("    - schema: $id")
         }
-        try {
-            getCustomYamlFile(context).writeText(sb.toString())
+        customFile.writeText(sb.toString())
+    }
+
+    /** 复制 app 固定的 assets/default.custom.yaml 模板（assets 根与 rime 目录同名，与 RimeConfigHelper 同步的是同一份）。 */
+    private fun copyBuiltinDefaultCustom(context: Context, target: File): Boolean {
+        return try {
+            context.assets.open(CUSTOM_YAML).use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to write custom.yaml", e)
+            Log.e(TAG, "Failed to copy builtin $CUSTOM_YAML", e)
+            false
         }
-        // F1: 同步写进 default.yaml，确保 librime 真正编译启用的方案
-        applyEnabledSchemasToDefaultYaml(context, schemaIds)
     }
 
     fun toggleSchema(context: Context, schemaId: String) {
@@ -859,6 +926,17 @@ object SchemaManager {
         name.endsWith(".jpeg", ignoreCase = true) ||
         name.endsWith(".png", ignoreCase = true)
 
+    /** 判断文件名是否为字体文件（导入到 fonts/）。 */
+    fun isFont(name: String): Boolean =
+        name.endsWith(".ttf", ignoreCase = true) ||
+        name.endsWith(".otf", ignoreCase = true) ||
+        name.endsWith(".woff", ignoreCase = true) ||
+        name.endsWith(".woff2", ignoreCase = true)
+
+    /** fonts 目录：rime/fonts/，存放用户导入的自定义字体。 */
+    fun getFontsDir(context: Context): File =
+        File(getRimeDir(context), "fonts")
+
     /** themes 目录：rime/themes/，存放用户导入或自定义的背景图片。 */
     fun getThemesDir(context: Context): File =
         File(getRimeDir(context), "themes")
@@ -890,7 +968,22 @@ object SchemaManager {
         autoEnable: Boolean = true,
     ): ImportResult = withContext(Dispatchers.IO) {
         val name = sanitizeDisplayName(displayName)
-        if (isImage(name)) {
+        if (isFont(name)) {
+            // 字体文件：保存到 rime/fonts/，供自定义字体功能使用
+            val fontsDir = getFontsDir(context)
+            try {
+                fontsDir.mkdirs()
+                val target = File(fontsDir, name)
+                inputStream.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                FileLogger.i(TAG, "Imported $name -> rime/fonts/")
+                ImportResult(true)
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "Failed to import font $name", e)
+                ImportResult(false)
+            }
+        } else if (isImage(name)) {
             // 图片：背景图等，保存到 rime/themes/，供主题使用
             val themesDir = getThemesDir(context)
             try {

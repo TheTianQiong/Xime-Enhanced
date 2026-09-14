@@ -61,6 +61,7 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
                 return false
             }
             initialized = true
+            syncKeepAlive()
             // 预热模型：绑定后立即创建模型句柄并驻留，避免首次语音时
             // 1s 模型加载导致开头音频（如"你觉得"）在录音缓冲中被丢弃
             try {
@@ -92,8 +93,16 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
             }
             // 每次会话开始都重新 startAsr：服务端会 nativeReset 并重设回调，
             // 否则 preload 预热时 stop() 清空的 callback 会导致 partial 结果丢失
+            syncKeepAlive()
             val modelDir = modelManager.getSelectedModelDir().absolutePath
             runBlocking { client.startAsr(modelDir, asrCallback) }
+        } catch (e: InterruptedException) {
+            // 快速取消竞态：stopRecognition/cancelRecognition 会 interrupt 录音线程，
+            // 中断正好落在等待 :asr 绑定/模型加载的 runBlocking 上——属正常取消，不算错误，
+            // 不打 E 级日志（避免"启动引擎失败"误报污染排查）
+            Thread.currentThread().interrupt()
+            FileLogger.d(TAG, "start aborted: recording cancelled before engine started")
+            false
         } catch (e: Exception) {
             FileLogger.e(TAG, "start failed", e)
             false
@@ -109,6 +118,11 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
         if (!initialized) return
         val text = try {
             runBlocking { client.stopAsr() }
+        } catch (e: InterruptedException) {
+            // 录音线程被取消 interrupt 时可能正阻塞在此（同 start 的取消竞态），属正常路径
+            Thread.currentThread().interrupt()
+            FileLogger.d(TAG, "stop aborted: recording cancelled")
+            ""
         } catch (e: Exception) {
             FileLogger.e(TAG, "stop failed", e)
             ""
@@ -147,4 +161,19 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
     }
 
     override fun isAvailable(): Boolean = true
+
+    /**
+     * 把"保持引擎常驻"设置同步到 :asr 服务。每次绑定/会话开始都同步一次：
+     * 用户中途切换设置后，下一个会话立即按新设置决定是否空闲释放模型。
+     */
+    private fun syncKeepAlive() {
+        try {
+            runBlocking {
+                client.setKeepModelAlive(
+                    com.kingzcheung.xime.settings.SettingsPreferences.isSttKeepEngineAlive(context)
+                )
+            }
+        } catch (_: Exception) {
+        }
+    }
 }

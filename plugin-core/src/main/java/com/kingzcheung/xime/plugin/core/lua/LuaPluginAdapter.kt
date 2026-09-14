@@ -3,8 +3,8 @@ package com.kingzcheung.xime.plugin.core.lua
 import com.kingzcheung.xime.plugin.core.api.IPluginEntryClass
 import com.kingzcheung.xime.plugin.core.api.PluginIcon
 import com.kingzcheung.xime.plugin.core.config.IPluginConfigurable
-import com.kingzcheung.xime.plugin.core.config.PluginFieldType
-import com.kingzcheung.xime.plugin.core.config.PluginSettingField
+import com.kingzcheung.xime.plugin.core.config.UiNode
+import com.kingzcheung.xime.plugin.core.config.UiNodeType
 import com.kingzcheung.xime.plugin.core.lua.sdk.LuaPluginContract
 import com.kingzcheung.xime.plugin.core.model.PluginContext
 import org.luaj.vm2.LuaValue
@@ -19,25 +19,12 @@ open class LuaPluginAdapter(
     protected val pluginContext: PluginContext
 ) : IPluginEntryClass, IPluginConfigurable {
 
-    override fun getSettingsSchema(): List<PluginSettingField> {
+    override fun getSettingsSchema(): List<UiNode> {
         val result = runtime.call("getSettingsSchema")
         if (!result.istable()) return emptyList()
-        return LuaScriptRuntime.tableToList(result).mapNotNull { field ->
-            val map = LuaScriptRuntime.tableToMap(field)
-            val key = map["key"]?.tojstring() ?: return@mapNotNull null
-            PluginSettingField(
-                key = key,
-                label = map["label"]?.tojstring() ?: key,
-                type = parseFieldType(map["type"]?.tojstring()),
-                placeholder = map["placeholder"]?.tojstring(),
-                defaultValue = map["defaultValue"]?.tojstring(),
-                options = stringList(map["options"] ?: LuaValue.NIL),
-                helpText = map["helpText"]?.tojstring(),
-                section = map["section"]?.tojstring(),
-                required = map["required"]?.toboolean() ?: true,
-                action = map["action"]?.tojstring()
-            )
-        }
+        // 设置字段必须带 key（configStore 绑定）；无 key 的展示节点（SECTION/DIVIDER 等）
+        // 由渲染层容忍，这里仅过滤无法绑定的节点
+        return parseUiNodes(result).filter { !it.key.isNullOrBlank() }
     }
 
     override suspend fun onAction(action: String): String? {
@@ -54,15 +41,53 @@ open class LuaPluginAdapter(
         return stringList(result)
     }
 
-    private fun parseFieldType(type: String?): PluginFieldType = when (type) {
-        "textarea" -> PluginFieldType.TEXTAREA
-        "secret" -> PluginFieldType.SECRET
-        "select" -> PluginFieldType.SELECT
-        "multi_select" -> PluginFieldType.MULTI_SELECT
-        "switch" -> PluginFieldType.SWITCH
-        "number" -> PluginFieldType.NUMBER
-        "button" -> PluginFieldType.BUTTON
-        else -> PluginFieldType.TEXT
+    /**
+     * 统一声明式 UI 节点解析（设置表单 getSettingsSchema 与面板 getPanelState.ui 共用一套
+     * 契约）。Lua 节点 table → [UiNode]，字段：
+     * `{ type, key?, label?, value?, defaultValue?, options?, placeholder?, helpText?,
+     *   unit?, style?, section?, required? }`。
+     *
+* 旧字段名兼容（v0.2.0 存量插件）：title→label、content→value、actionId→key、
+ * type 的 "action" → BUTTON、BUTTON 的 action→key。未知 type 丢弃。
+     * 节点数上限 [MAX_UI_NODES]（防插件撑爆面板/表单）。
+     */
+    protected fun parseUiNodes(value: LuaValue): List<UiNode> {
+        if (!value.istable()) return emptyList()
+        val nodes = ArrayList<UiNode>()
+        for (node in LuaScriptRuntime.tableToList(value)) {
+            if (!node.istable()) continue
+            val m = LuaScriptRuntime.tableToMap(node)
+            nodes += UiNode(
+                type = parseUiNodeType(m["type"]?.tojstring()),
+                key = (m["key"] ?: m["actionId"] ?: m["action"])?.tojstring()?.takeIf { it.isNotBlank() },
+                label = (m["label"] ?: m["title"])?.tojstring(),
+                value = (m["value"] ?: m["content"])?.tojstring(),
+                defaultValue = m["defaultValue"]?.tojstring(),
+                options = stringList(m["options"] ?: LuaValue.NIL),
+                placeholder = m["placeholder"]?.tojstring(),
+                helpText = m["helpText"]?.tojstring(),
+                unit = m["unit"]?.tojstring(),
+                style = m["style"]?.tojstring(),
+                section = m["section"]?.tojstring(),
+                required = m["required"]?.toboolean() ?: false,
+            )
+            if (nodes.size >= MAX_UI_NODES) break
+        }
+        return nodes
+    }
+
+    private fun parseUiNodeType(type: String?): UiNodeType = when (type?.lowercase()) {
+        "textarea" -> UiNodeType.TEXTAREA
+        "secret" -> UiNodeType.SECRET
+        "select" -> UiNodeType.SELECT
+        "multi_select" -> UiNodeType.MULTI_SELECT
+        "switch" -> UiNodeType.SWITCH
+        "number" -> UiNodeType.NUMBER
+        "action", "button" -> UiNodeType.BUTTON // 旧契约 "action" 兼容
+        "section" -> UiNodeType.SECTION
+        "metric" -> UiNodeType.METRIC
+        "divider" -> UiNodeType.DIVIDER
+        else -> UiNodeType.TEXT // 未知 type 降级为普通文本
     }
 
     private fun stringList(value: LuaValue): List<String> {
@@ -101,7 +126,7 @@ open class LuaPluginAdapter(
     open fun isConfigured(): Boolean {
         val schema = getSettingsSchema()
         if (schema.isEmpty()) return true
-        return schema.none { it.required && pluginContext.configStore.get(it.key).isNullOrBlank() }
+        return schema.none { it.required && it.key != null && pluginContext.configStore.get(it.key).isNullOrBlank() }
     }
 
     /**
@@ -149,5 +174,8 @@ open class LuaPluginAdapter(
     companion object {
         const val FN_GET_EMOJIS = LuaPluginContract.FN_GET_EMOJIS
         const val FN_GET_CATEGORIES = LuaPluginContract.FN_GET_CATEGORIES
+
+        /** 声明式 UI 节点数上限（防插件撑爆面板/设置表单）。 */
+        private const val MAX_UI_NODES = 64
     }
 }

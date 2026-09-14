@@ -2,8 +2,8 @@ package com.kingzcheung.xime.plugin.core.api
 
 import android.content.Context
 import com.kingzcheung.xime.plugin.core.config.IPluginConfigurable
-import com.kingzcheung.xime.plugin.core.config.PluginFieldType
-import com.kingzcheung.xime.plugin.core.config.PluginSettingField
+import com.kingzcheung.xime.plugin.core.config.UiNode
+import com.kingzcheung.xime.plugin.core.config.UiNodeType
 import com.kingzcheung.xime.plugin.core.model.PluginCapabilities
 import com.kingzcheung.xime.plugin.core.model.PluginContext
 import org.junit.Assert.assertEquals
@@ -75,19 +75,19 @@ class AsrPluginDefaultImplTest {
     @Test
     fun `schema can be overridden with SECRET apiKey field`() {
         val plugin = object : FakeAsrPlugin() {
-            override fun getSettingsSchema(): List<PluginSettingField> =
+            override fun getSettingsSchema(): List<UiNode> =
                 listOf(
-                    PluginSettingField(
+                    UiNode(
                         key = "apiKey",
                         label = "API Key",
-                        type = PluginFieldType.SECRET
+                        type = UiNodeType.SECRET,
                     )
                 )
         }
 
         val field = plugin.getSettingsSchema().first()
         assertEquals("apiKey", field.key)
-        assertEquals(PluginFieldType.SECRET, field.type)
+        assertEquals(UiNodeType.SECRET, field.type)
         assertTrue(plugin.getSettingsSchema().isNotEmpty())
     }
 

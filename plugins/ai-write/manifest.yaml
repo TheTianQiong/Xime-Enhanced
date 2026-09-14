@@ -33,27 +33,7 @@ toolbarButtons:
 network:
   allowCustomHosts: true
 
-# 配置字段
-configSchema:
-  - key: apiKey
-    label: API Key
-    type: secret
-    placeholder: 输入 LLM API Key
-    helpText: OpenAI 兼容接口的 API Key
-  - key: baseUrl
-    label: 接口地址
-    type: text
-    defaultValue: https://api.openai.com/v1
-    helpText: OpenAI 兼容接口地址（/chat/completions 前缀），域名将自动获得联网授权
-  - key: model
-    label: 模型
-    type: text
-    defaultValue: gpt-4o-mini
-  - key: prompt
-    label: 写作模板
-    type: textarea
-    defaultValue: "你是我的写作助手。请根据以下上下文与要求写一段通顺的中文文字：\n{context}"
-    helpText: 写作 prompt 模板，{context} 会被替换为面板输入内容
+# 能力声明
 # 能力声明
 capabilities:
   tool:

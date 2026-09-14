@@ -12,6 +12,8 @@ import androidx.room3.PrimaryKey
 data class ClipboardEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val text: String,
+    /** 快捷发送触发编码（如 dh）：用户输入编码前缀命中后，对应快捷条目进入候选栏。 */
+    @ColumnInfo(defaultValue = "") val code: String = "",
     @ColumnInfo(defaultValue = "0") val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo(defaultValue = "0") val isPinned: Boolean = false,
     @ColumnInfo(defaultValue = "0") val isQuickSend: Boolean = false,

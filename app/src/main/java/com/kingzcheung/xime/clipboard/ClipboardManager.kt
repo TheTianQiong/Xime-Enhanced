@@ -27,6 +27,8 @@ import android.content.ClipboardManager as AndroidClipboardManager
 data class ClipboardItem(
     val id: Long = 0,
     val text: String,
+    /** 快捷发送触发编码（如 dh），空 = 仅内容命中不参与编码匹配。 */
+    val code: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val isPinned: Boolean = false,
     val isQuickSend: Boolean = false,
@@ -214,6 +216,7 @@ class ClipboardManager private constructor(private val context: Context) {
         return ClipboardItem(
             id = id,
             text = text,
+            code = code,
             timestamp = timestamp,
             isPinned = isPinned,
             isQuickSend = isQuickSend,
@@ -303,20 +306,20 @@ class ClipboardManager private constructor(private val context: Context) {
         }
     }
 
-    fun updateQuickSendItem(id: Long, newText: String): Boolean {
+    fun updateQuickSendItem(id: Long, newText: String, newCode: String = ""): Boolean {
         if (newText.isBlank()) return false
         val index = _quickSendItems.value.indexOfFirst { it.id == id }
         if (index < 0) return false
         scope.launch {
-            dao.updateText(id, newText, System.currentTimeMillis())
+            dao.updateQuickSendItem(id, newText, newCode.trim(), System.currentTimeMillis())
         }
         return true
     }
 
-    fun addQuickSendItem(text: String) {
+    fun addQuickSendItem(text: String, code: String = "") {
         if (text.isBlank()) return
         scope.launch {
-            dao.insertQuickSend(text, System.currentTimeMillis(), MAX_QUICK_SEND_ITEMS)
+            dao.insertQuickSend(text, code.trim(), System.currentTimeMillis(), MAX_QUICK_SEND_ITEMS)
         }
     }
 

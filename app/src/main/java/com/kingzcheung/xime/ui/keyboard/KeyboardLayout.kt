@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -201,6 +202,9 @@ fun KeyboardLayout(
             GestureAction.TOGGLE_SYMBOLS -> {
                 callbacks.onKeyPress("mode_change", false)
             }
+            GestureAction.TOGGLE_SHIFT -> {
+                viewModel.toggleShift()
+            }
             else -> callbacks.onGestureAction?.invoke(action, value) ?: Unit
         }
     }
@@ -277,7 +281,13 @@ fun KeyboardLayout(
 
     val isLandscape = !uiState.isFloatingMode && LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
 
-    CompositionLocalProvider(LocalKeyCornerRadius provides kbKey.cornerRadius.dp) {
+    CompositionLocalProvider(
+        LocalKeyCornerRadius provides kbKey.cornerRadius.dp,
+        LocalKeyVisualPadding provides PaddingValues(
+            horizontal = kbKey.spacingFor("qwerty").first?.dp ?: 2.dp,
+            vertical = kbKey.spacingFor("qwerty").second?.dp ?: 4.25.dp,
+        ),
+    ) {
     Box(
         modifier = modifier
             .onGloballyPositioned { coordinates ->
@@ -427,7 +437,6 @@ fun KeyboardLayout(
                                 backgroundColor = specialKeyBackgroundColor,
                                 iconColor = specialKeyTextColor,
                                 modifier = Modifier
-                                    .padding(2.dp,4.dp)
                                     .weight(1.4f)
                                     .fillMaxHeight(),
                                 shadowEnabled = shadowEnabled,
@@ -545,7 +554,6 @@ fun KeyboardLayout(
                                 backgroundColor = specialKeyBackgroundColor,
                                 iconColor = specialKeyTextColor,
                                 modifier = Modifier
-                                    .padding(2.dp,0.dp)
                                     .weight(1.4f)
                                     .fillMaxHeight(),
                                 swipeText = "清空",
@@ -743,15 +751,19 @@ fun KeyboardLayout(
                             // earth — 从配置读取
                             val k4KeyGesture = KeysConfigHelper.getKeyGesture("earth", isAsciiMode)
                             val k4TapAction = k4KeyGesture?.tap?.action
-                            val k4TapValue = k4KeyGesture?.tap?.value?.takeIf { it.isNotEmpty() } ?: ""
-                            val k4TapLabel = k4KeyGesture?.tap?.label?.takeIf { it.isNotEmpty() } ?: ""
+                            // 无 tap 手势配置时回退地球键默认语义：地球图标 + 中英切换。
+                            // 否则键面空白（label=""/icon=null）且点击发出空键值——空键值在
+                            // 中文模式会触发 ImeKeyRouter lowercase()[0] 越界崩溃（2026-09-14 实证）。
+                            val isEarthDefaultTap = k4KeyGesture?.tap == null
+                            val k4TapValue = k4KeyGesture?.tap?.value?.takeIf { it.isNotEmpty() } ?: "ime_switch"
+                            val k4TapLabel = k4KeyGesture?.tap?.label?.takeIf { it.isNotEmpty() } ?: "中"
                             val k4Icon: Painter? = k4KeyGesture?.tap?.icon?.takeIf { it.isNotEmpty() }?.let { iconName ->
                                 val iv = when (iconName) {
                                     "language", "globe" -> Icons.Default.Language
                                     else -> null
                                 }
                                 iv?.let { rememberVectorPainter(it) }
-                            }
+                            } ?: if (isEarthDefaultTap) rememberVectorPainter(Icons.Default.Language) else null
                             val k4SwipeUpRaw = k4KeyGesture?.swipeUp
                             val k4SwipeUpLabel = if (isAsciiMode)
                                 (k4SwipeUpRaw?.value?.takeIf { it.isNotEmpty() } ?: "")
@@ -810,9 +822,9 @@ fun KeyboardLayout(
                                     Unit
                                 }
                             }
-                            if (k4TapAction == GestureAction.TOGGLE_ASCII && k4LongPressLabels == null && k4Icon != null) {
+                            if ((k4TapAction == GestureAction.TOGGLE_ASCII && k4Icon != null || isEarthDefaultTap) && k4LongPressLabels == null) {
                                 IconKeyButton(
-                                    icon = k4Icon,
+                                    icon = k4Icon ?: rememberVectorPainter(Icons.Default.Language),
                                     onClick = k4OnClick,
                                     backgroundColor = keyBackgroundColor,
                                     iconColor = keyTextColor,
@@ -1141,6 +1153,7 @@ private fun ShiftCapsKeyButton(
                     isPressed = false
                 }
             }
+            .padding(LocalKeyVisualPadding.current)
             .then(shadowModifier)
             .clip(keyClipShape)
             .background(
@@ -1263,12 +1276,20 @@ private fun LandscapeKeyboardContent(
             GestureAction.TOGGLE_SYMBOLS -> {
                 callbacks.onKeyPress("mode_change", false)
             }
+            GestureAction.TOGGLE_SHIFT -> {
+                viewModel.toggleShift()
+            }
             else -> callbacks.onGestureAction?.invoke(action, value) ?: Unit
         }
     }
 
     CompositionLocalProvider(
-        LocalKeyVisualPadding provides PaddingValues(horizontal = 1.dp, vertical = 2.dp)
+        LocalKeyVisualPadding provides PaddingValues(
+            horizontal = kbKey.spacingFor("qwerty").first?.dp ?: 2.dp,
+            // 竖向只认 qwerty 专属覆盖（keyboard.key.qwerty.spacing_y），不回退全局 spacing_y
+            // ——全局值是竖屏行距（4.25dp），横屏行盒被它撑开后按键只剩 ~23dp 高
+            vertical = kbKey.spacingOverrides["qwerty"]?.spacingY?.dp ?: 2.dp,
+        )
     ) {
         Row(
             modifier = Modifier
@@ -1374,7 +1395,7 @@ private fun LandscapeKeyboardContent(
                     onKeyPressDown = onKeyPressDown,
                     backgroundColor = specialKeyBackgroundColor,
                     iconColor = specialKeyTextColor,
-                    modifier = Modifier.padding(1.dp,2.dp).weight(1.2f),
+                    modifier = Modifier.weight(1.2f),
                         shadowEnabled = shadowEnabled,
                         shadowElevation = shadowElevation,
                         shadowShapeRadius = shadowShapeRadius,
@@ -1530,8 +1551,7 @@ private fun LandscapeKeyboardContent(
                     backgroundColor = specialKeyBackgroundColor,
                     iconColor = specialKeyTextColor,
                     modifier = Modifier
-                        .padding(1.dp)
-                        .width(48.dp)
+                        .weight(1f)
                         .fillMaxHeight(),
                     onLongClick = { onKeyPress("delete") },
                     onPress = { onKeyPressDown?.invoke("delete") },
@@ -1698,7 +1718,8 @@ fun SwipeableKeyButtonLandscape(
     val currentOnSwipeStateChange by rememberUpdatedState(onSwipeStateChange)
     val scope = rememberCoroutineScope()
     val view = LocalView.current
-    val chaiPuaFontFamily = AppFonts.chaiPuaFontFamily
+    val keyLabelFontFamily = AppFonts.keyLabelFontFamily
+    val keyFontFamily = AppFonts.keyFontFamily
 
     val density = LocalDensity.current
     val swipeUpThreshold = with(density) { (-15).dp.toPx() }
@@ -1733,7 +1754,7 @@ fun SwipeableKeyButtonLandscape(
         )
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight()
             .fillMaxWidth()
@@ -1941,6 +1962,15 @@ fun SwipeableKeyButtonLandscape(
             .background(if (isPressed) darkenColor(backgroundColor) else backgroundColor),
         contentAlignment = Alignment.TopStart
     ) {
+        val contentScale = adaptiveKeyContentScale(
+            keyHeightDp = maxHeight.value,
+            referenceHeightDp = 44f,
+        )
+        val hintScale = adaptiveHintScale(contentScale)
+        val effectiveFontSize = (
+            if (fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) fontSize.value else 14f
+        ) * contentScale
+        val effectiveSwipeFontSize = swipeFontSize.value * hintScale
 
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -1949,11 +1979,12 @@ fun SwipeableKeyButtonLandscape(
             Text(
                 text = text,
                 color = textColor,
-                fontSize = if (fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) fontSize else 14.sp,
+                fontSize = effectiveFontSize.sp,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
-                lineHeight = TextUnit.Unspecified
+                lineHeight = TextUnit.Unspecified,
+                fontFamily = keyFontFamily
             )
         }
 
@@ -1962,11 +1993,11 @@ fun SwipeableKeyButtonLandscape(
             Text(
                 text = keyLabel,
                 color = textColor.copy(alpha = 0.5f),
-                fontSize = swipeFontSize,
+                fontSize = effectiveSwipeFontSize.sp,
                 fontWeight = FontWeight.Normal,
                 textAlign = TextAlign.End,
                 maxLines = 1,
-                lineHeight = 8.sp,
+                lineHeight = (8f * hintScale).sp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 2.dp, end = 4.dp)
@@ -1976,12 +2007,12 @@ fun SwipeableKeyButtonLandscape(
             Text(
                 text = swipeDownKeyLabel,
                 color = textColor.copy(alpha = 0.5f),
-                fontSize = swipeFontSize,
+                fontSize = effectiveSwipeFontSize.sp,
                 fontWeight = FontWeight.Normal,
-                fontFamily = chaiPuaFontFamily,
+                fontFamily = keyLabelFontFamily,
                 textAlign = TextAlign.Start,
                 maxLines = 1,
-                lineHeight = 8.sp,
+                lineHeight = (8f * hintScale).sp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(start = 4.dp, bottom = 2.dp)
@@ -2140,6 +2171,7 @@ private fun SplitSpaceKey(
     }
     val keyCornerRadius = LocalKeyCornerRadius.current
     val keyClipShape = remember(keyCornerRadius) { RoundedCornerShape(keyCornerRadius) }
+    val keyFontFamily = AppFonts.keyFontFamily
 
     Box(
         modifier = modifier
@@ -2161,7 +2193,8 @@ private fun SplitSpaceKey(
             fontSize = 14.sp,
             fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center,
-            maxLines = 1
+            maxLines = 1,
+            fontFamily = keyFontFamily
         )
 
         Text(
@@ -2173,7 +2206,8 @@ private fun SplitSpaceKey(
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 6.dp, bottom = 2.dp)
+                .padding(start = 6.dp, bottom = 2.dp),
+            fontFamily = keyFontFamily
         )
     }
 }
@@ -2220,6 +2254,7 @@ private fun SpaceKey(
             }
         } else Modifier
     }
+    val keyFontFamily = AppFonts.keyFontFamily
 
     Box(
         modifier = modifier
@@ -2301,7 +2336,8 @@ private fun SpaceKey(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     textAlign = TextAlign.Center,
-                    maxLines = 1
+                    maxLines = 1,
+                    fontFamily = keyFontFamily
                 )
 
                 if (isSttEnabled) {
@@ -2319,7 +2355,8 @@ private fun SpaceKey(
                         fontWeight = FontWeight.Normal,
                         textAlign = TextAlign.Start,
                         maxLines = 1,
-                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 2.dp)
+                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 2.dp),
+                        fontFamily = keyFontFamily
                     )
                 }
             }

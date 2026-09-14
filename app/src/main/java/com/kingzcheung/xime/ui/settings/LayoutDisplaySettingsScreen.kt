@@ -364,6 +364,40 @@ fun LayoutDisplaySettingsContent(
                     }
                 })
             }
+
+            item {
+                SettingsSection(title = "输入框适配", content = {
+                    var autoNumberKeyboard by remember {
+                        mutableStateOf(SettingsPreferences.isAutoNumberKeyboardEnabled(context))
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "数字框自动数字键盘",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "进入号码、验证码等数字输入框时自动弹出数字键盘",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoNumberKeyboard,
+                            onCheckedChange = { newValue ->
+                                autoNumberKeyboard = newValue
+                                SettingsPreferences.setAutoNumberKeyboardEnabled(context, newValue)
+                            }
+                        )
+                    }
+                })
+            }
         }
     }
 }

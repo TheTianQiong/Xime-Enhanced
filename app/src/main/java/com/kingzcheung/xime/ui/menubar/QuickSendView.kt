@@ -30,7 +30,7 @@ fun QuickSendTabContent(
     viewModel: KeyboardViewModel,
     onSelect: (String) -> Unit,
     onQuickSendAddClick: (() -> Unit)? = null,
-    onQuickSendEditItem: ((Long, String) -> Unit)? = null,
+    onQuickSendEditItem: ((Long, String, String) -> Unit)? = null,
     onLongPressItem: (ClipboardItem, Boolean) -> Unit,
 ) {
     if (items.isEmpty()) {

@@ -1,6 +1,7 @@
 package com.kingzcheung.xime.plugin.core.lua
 
 import com.kingzcheung.xime.plugin.core.config.PluginConfigStore
+import com.kingzcheung.xime.plugin.core.config.UiNodeType
 import com.kingzcheung.xime.plugin.core.lua.http.HttpHostApi
 import com.kingzcheung.xime.plugin.core.lua.http.HttpResponse
 import com.kingzcheung.xime.plugin.core.lua.http.SseHostApi
@@ -142,6 +143,81 @@ class LuaAiPluginTest {
     }
 
     @Test
+    fun `ai-reply 点选上屏后重置面板状态`() {
+        val dir = File("../plugins/ai-reply")
+        assertTrue(dir.exists())
+        val store = InMemoryConfigStore()
+        store.set("apiKey", "test-key")
+        store.set("baseUrl", "https://api.example.com/v1")
+        val runtime = LuaScriptRuntime(
+            "com.kingzcheung.xime.plugin.ai_reply", dir, "main.lua", store,
+            httpHostApi = MockHttpHostApi(
+                HttpResponse(
+                    status = 200,
+                    body = """{"choices":[{"message":{"content":"好的！\n好的呀！"}}]}""".toByteArray()
+                )
+            )
+        )
+        assertTrue(runtime.load())
+        val adapter = LuaToolPluginAdapter(runtime, com.kingzcheung.xime.plugin.core.model.PluginContext(
+            application = android.app.Application(),
+            pluginInfo = com.kingzcheung.xime.plugin.core.model.PluginInfo(
+                id = "com.kingzcheung.xime.plugin.ai_reply", name = "AI 智能回复", description = "测试",
+                iconResId = 0, versionCode = 1, versionName = "0.1.0",
+                path = File(dir, "main.lua").absolutePath, type = "tool"
+            ),
+            configStore = store,
+        ))
+
+        adapter.onPanelInput("明天有空吗")
+        adapter.onPanelAction("generate")
+        assertTrue("生成后应有候选", adapter.getPanelState("明天有空吗").items.isNotEmpty())
+
+        // 点选上屏：状态重置，下次打开面板回到初始态
+        adapter.onPanelItemClick("1")
+        val state = adapter.getPanelState("")
+        assertTrue("上屏后候选应清空", state.items.isEmpty())
+        assertTrue("重置后应回到初始态（含生成按钮）", state.ui?.any { it.type == UiNodeType.BUTTON } == true)
+    }
+
+    @Test
+    fun `ai-reply 上下文变化时旧候选自动失效`() {
+        val dir = File("../plugins/ai-reply")
+        assertTrue(dir.exists())
+        val store = InMemoryConfigStore()
+        store.set("apiKey", "test-key")
+        store.set("baseUrl", "https://api.example.com/v1")
+        val runtime = LuaScriptRuntime(
+            "com.kingzcheung.xime.plugin.ai_reply", dir, "main.lua", store,
+            httpHostApi = MockHttpHostApi(
+                HttpResponse(
+                    status = 200,
+                    body = """{"choices":[{"message":{"content":"好的！"}}]}""".toByteArray()
+                )
+            )
+        )
+        assertTrue(runtime.load())
+        val adapter = LuaToolPluginAdapter(runtime, com.kingzcheung.xime.plugin.core.model.PluginContext(
+            application = android.app.Application(),
+            pluginInfo = com.kingzcheung.xime.plugin.core.model.PluginInfo(
+                id = "com.kingzcheung.xime.plugin.ai_reply", name = "AI 智能回复", description = "测试",
+                iconResId = 0, versionCode = 1, versionName = "0.1.0",
+                path = File(dir, "main.lua").absolutePath, type = "tool"
+            ),
+            configStore = store,
+        ))
+
+        adapter.onPanelInput("明天有空吗")
+        adapter.onPanelAction("generate")
+        assertTrue(adapter.getPanelState("明天有空吗").items.isNotEmpty())
+
+        // 用户复制了新消息后重新打开面板（新上下文）→ 旧候选失效，回到初始态
+        val state = adapter.getPanelState("周六怎么样")
+        assertTrue("新上下文应清空旧候选", state.items.isEmpty())
+        assertTrue("新上下文应回到初始态（含生成按钮）", state.ui?.any { it.type == UiNodeType.BUTTON } == true)
+    }
+
+    @Test
     fun `ai-write 流式累积文本并支持中断`() {
         val dir = File("../plugins/ai-write")
         assertTrue("ai-write 插件目录应存在: ${dir.absolutePath}", dir.exists())
@@ -276,7 +352,7 @@ class LuaAiPluginTest {
             assertNotNull("$name 应包含 prompt", prompt)
             assertEquals(
                 "$name prompt 应为 textarea 长文本编辑",
-                com.kingzcheung.xime.plugin.core.config.PluginFieldType.TEXTAREA,
+                com.kingzcheung.xime.plugin.core.config.UiNodeType.TEXTAREA,
                 prompt!!.type
             )
         }

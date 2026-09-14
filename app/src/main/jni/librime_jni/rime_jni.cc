@@ -4,6 +4,8 @@
 #include <rime_api.h>
 #include <rime/setup.h>
 #include <rime/dict/reverse_lookup_dictionary.h>
+#include <rime/service.h>
+#include <rime/schema.h>
 #include "t9_processor.h"
 #include "t9_patch_utils.h"
 #include "t9_digit_userdict.h"
@@ -16,6 +18,10 @@
 #include <cstring>   // for strcmp
 #include <utility>   // for std::pair
 #include <ctime>     // for time
+#include <signal.h>  // native crash 捕获
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unwind.h>  // 信号安全的 native 调用栈采集
 
 #define LOG_TAG "XimeRime"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -144,6 +150,9 @@ public:
         session_id_ = rime->create_session();
         if (session_id_ != 0) {
             LOGI("Session created: %lu", (unsigned long)session_id_);
+            // 会话重建后的初始 Schema 可能读到部署产物里的旧 page_size
+            //（方案自带/第三方为 PC 默认 5），重新对齐到 app 覆盖值
+            reapplyPageSizeIfNeeded();
         } else {
             LOGD("Session creation failed (engine may be maintaining)");
         }
@@ -226,7 +235,7 @@ public:
         result.inputText = input ? input : "";
         result.preeditText = context.composition.preedit ?
             context.composition.preedit : "";
-        LOGI("readCurrentState: input='%s' num_candidates=%d", result.inputText.c_str(), context.menu.num_candidates);
+        LOGI("readCurrentState: input='%s' preedit='%s' num_candidates=%d", result.inputText.c_str(), result.preeditText.c_str(), context.menu.num_candidates);
         if (context.menu.num_candidates > 0) {
             for (int i = 0; i < context.menu.num_candidates; ++i) {
                 const char* text = context.menu.candidates[i].text;
@@ -400,6 +409,14 @@ public:
     bool selectCandidate(int index) {
         if (!rime || !session_id_) return false;
         return rime->select_candidate_on_current_page(session_id_, index);
+    }
+
+    // 删除当前页候选（标准 C API delete_candidate_on_current_page）：
+    // librime 对 Phrase 候选执行 userdb tombstone（UpdateEntry -1），
+    // 即自造词/调频词删除；非用户词由 rime 侧自行判定，无副作用。
+    bool deleteCandidateOnCurrentPage(int index) {
+        if (!rime || !session_id_) return false;
+        return rime->delete_candidate_on_current_page(session_id_, index);
     }
     
     bool pageDown() {
@@ -652,7 +669,8 @@ public:
             return false;
         }
         LOGI("New session created: %lu", (unsigned long)session_id_);
-        
+        reapplyPageSizeIfNeeded();
+
         LOGI("Deployment completed successfully");
         return true;
     }
@@ -706,6 +724,7 @@ public:
         
         // 重新创建session
         session_id_ = rime->create_session();
+        reapplyPageSizeIfNeeded();
         LOGI("Deploy schema completed: %s", schemaId);
         return true;
     }
@@ -721,20 +740,54 @@ public:
         }
     }
 
+    // 把记住的每页候选数覆盖值注入引擎（值来自 app 设置页，非 cpp 写死）：
+    // 1) 修改方案配置缓存：schema_open 打开的 ConfigData 由组件按 id 弱引用共享，
+    //    此处写入后，之后构造的所有 Schema 都会读到覆盖值；
+    // 2) 当前会话正在使用该方案时，幂等重构造 Schema 立即生效——Schema 仅在
+    //    构造时读取 menu/page_size（FetchUsefulConfigItems），只改配置对已构造的
+    //    Schema 无效。旧实现只有第 1 步，部署/会话重建后无人再调 setPageSize 时
+    //    候选数漂移回方案自带值（内置/第三方方案多为 PC 默认 5，不适配手机）。
+    void applyPageSizeOverride(const char* schema_id) {
+        if (!rime || page_size_override_ <= 0) return;
+        RimeConfig config;
+        if (rime->schema_open(schema_id, &config)) {
+            rime->config_set_int(&config, "menu/page_size", page_size_override_);
+            rime->config_close(&config);
+        } else {
+            LOGE("applyPageSizeOverride: schema_open failed for '%s'", schema_id);
+        }
+        if (!session_id_) return;
+        auto session = rime::Service::instance().GetSession(
+            static_cast<rime::SessionId>(session_id_));
+        if (!session) return;
+        auto schema = session->schema();
+        // 仅当会话正用该方案时幂等刷新（重构造 Schema 读到覆盖值）；
+        // 目标方案与当前不同时只写缓存，随后的 switchSchema 自然生效
+        if (!schema || schema->schema_id() != schema_id) return;
+        session->ApplySchema(new rime::Schema(schema->schema_id()));
+        LOGI("applyPageSizeOverride: re-applied schema '%s' (menu/page_size=%d)",
+             schema_id, page_size_override_);
+    }
+
+    // 会话重建（创建/部署）后重新对齐覆盖值；无覆盖值时为空操作
+    void reapplyPageSizeIfNeeded() {
+        if (page_size_override_ <= 0 || !session_id_ || !rime) return;
+        auto session = rime::Service::instance().GetSession(
+            static_cast<rime::SessionId>(session_id_));
+        if (!session) return;
+        auto schema = session->schema();
+        if (!schema) return;
+        applyPageSizeOverride(schema->schema_id().c_str());
+    }
+
     void setPageSize(const char* schema_id, int page_size) {
         if (!rime) {
             LOGE("setPageSize: rime not available");
             return;
         }
-        // schema_open 直接打开方案的配置对象，修改内存中的 menu/page_size
-        RimeConfig config;
-        if (rime->schema_open(schema_id, &config)) {
-            rime->config_set_int(&config, "menu/page_size", page_size);
-            rime->config_close(&config);
-            LOGI("Set schema '%s' menu/page_size=%d via schema_open", schema_id, page_size);
-        } else {
-            LOGE("setPageSize: schema_open failed for '%s'", schema_id);
-        }
+        if (page_size <= 0) return;
+        page_size_override_ = page_size;
+        applyPageSizeOverride(schema_id);
     }
 
     void setOption(const char* option, Bool value) {
@@ -874,6 +927,9 @@ private:
     std::string user_data_dir_;
     std::string shared_data_dir_;
     bool initialized_ = false;
+    // app 设置的每页候选数覆盖值（<=0 表示未设置）；会话重建后由
+    // reapplyPageSizeIfNeeded 重新对齐，保证不被方案自带值（PC 默认 5）漂移
+    int page_size_override_ = 0;
 };
 
 extern "C" {
@@ -1236,6 +1292,17 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeSelectCandidate(
     return Rime::Instance().selectCandidate(index) ? JNI_TRUE : JNI_FALSE;
 }
 
+// 删除当前页候选（长按候选栏删除自造词）：标准 C API
+// delete_candidate_on_current_page，index 为当前页内索引。
+JNIEXPORT jboolean JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeDeleteCandidateOnCurrentPage(
+    JNIEnv* env,
+    jobject thiz,
+    jint index
+) {
+    return Rime::Instance().deleteCandidateOnCurrentPage(index) ? JNI_TRUE : JNI_FALSE;
+}
+
 // 翻页 - 下一页
 JNIEXPORT jboolean JNICALL
 Java_com_kingzcheung_xime_rime_RimeEngine_nativePageDown(
@@ -1486,14 +1553,16 @@ static jboolean DoEnsureT9SchemaPatches(
         patch_lines.push_back(
             std::string("  \"t9/isDisplayOriginalPreedit\": ") + preedit_default);
     }
-    // t9_user_translator 占据 translators 首位。
-    // 旧版 t9_date_translator 注入在 @before 0，与新 user 冲突，迁移到 @after 0。
+    // t9_user_translator 已废弃（自造词调频/召回统一走 librime userdb，
+    // 召回由 script_translator 的 UserDictionary 查询承担）：
+    // 不再注入新补丁；老设备 custom.yaml 中的历史注入行必须清除，
+    // 否则运行时每次会话都报 "error creating translator" 并跳过该组件。
+    const bool has_user_translator_patch =
+        existing_content.find("t9_user_translator") != std::string::npos;
+    // 旧版 t9_date_translator 注入在 @before 0（曾与 user translator 抢占
+    // 首位冲突，迁移到 @after 0）。
     const bool legacy_date_before0 =
         existing_content.find("\"engine/translators/@before 0\": t9_date_translator") != std::string::npos;
-    if (schema_content.find("t9_user_translator") == std::string::npos &&
-        existing_content.find("t9_user_translator") == std::string::npos) {
-        patch_lines.push_back("  \"engine/translators/@before 0\": t9_user_translator");
-    }
     if (schema_content.find("t9_date_translator") == std::string::npos &&
         (existing_content.find("t9_date_translator") == std::string::npos ||
          legacy_date_before0)) {
@@ -1529,7 +1598,7 @@ static jboolean DoEnsureT9SchemaPatches(
     }
 
     // 无改动 → 仅判断词库是否仍需编译。
-    if (patch_lines.empty() && !need_remove_derive) {
+    if (patch_lines.empty() && !need_remove_derive && !has_user_translator_patch) {
         const bool need_deploy = T9PackTableBinMissing(user_data_dir, actual_pack_name);
         return need_deploy ? JNI_TRUE : JNI_FALSE;
     }
@@ -1542,6 +1611,10 @@ static jboolean DoEnsureT9SchemaPatches(
     // 迁移旧版 translators/@before 0 的 date 行（与 user 冲突）
     if (legacy_date_before0) {
         base = StripLinesContaining(base, {"engine/translators/@before 0"});
+    }
+    // 迁移：清除已废弃 t9_user_translator 的历史注入行（组件已从模块移除）。
+    if (has_user_translator_patch) {
+        base = StripLinesContaining(base, {"t9_user_translator"});
     }
 
     // 剥离末尾 "..." 与空白，使追加的 patch 被 RIME 正常解析。
@@ -2090,6 +2163,128 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeT9GetFirstSyllableOptions(
         result += options[i];
     }
     return env->NewStringUTF(result.c_str());
+}
+
+// ===== Native 崩溃捕获 =====
+// librime 部署/编译发生在 native 层，SIGSEGV 等信号崩溃不经过 Java 的
+// UncaughtExceptionHandler，日志文件里不会留下任何痕迹。这里在进程内注册
+// 信号处理器，把信号号、出错地址和 native 调用栈写入预打开的文件描述符。
+// 信号处理函数内只使用异步信号安全的调用（write / _Unwind_Backtrace /
+// 手工格式化），不触碰 Java（JNI/ART 均非信号安全）、不调用 malloc。
+// 写入后恢复默认处理器并 re-raise，保证系统 tombstone 照常生成。
+
+static int g_native_crash_fd = -1;
+static bool g_signal_handler_installed = false;
+
+static void xime_safe_write(const char* s) {
+    if (g_native_crash_fd < 0 || !s) return;
+    size_t len = strlen(s);
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = write(g_native_crash_fd, s + off, len - off);
+        if (n <= 0) return;
+        off += (size_t)n;
+    }
+}
+
+static void xime_safe_write_hex(uintptr_t v) {
+    char buf[2 + sizeof(uintptr_t) * 2 + 1];
+    size_t n = 0;
+    buf[n++] = '0';
+    buf[n++] = 'x';
+    if (v == 0) buf[n++] = '0';
+    char tmp[sizeof(uintptr_t) * 2];
+    int t = 0;
+    while (v) {
+        int d = v & 0xf;
+        tmp[t++] = d < 10 ? ('0' + d) : ('a' + d - 10);
+        v >>= 4;
+    }
+    while (t) buf[n++] = tmp[--t];
+    buf[n] = '\0';
+    xime_safe_write(buf);
+}
+
+struct XimeBacktraceState {
+    uintptr_t frames[32];
+    int count;
+};
+
+static _Unwind_Reason_Code xime_trace_fn(struct _Unwind_Context* ctx, void* data) {
+    XimeBacktraceState* state = (XimeBacktraceState*)data;
+    if (state->count >= 32) return _URC_END_OF_STACK;
+    uintptr_t pc = _Unwind_GetIP(ctx);
+    if (pc) state->frames[state->count++] = pc;
+    return _URC_NO_REASON;
+}
+
+static void xime_native_crash_handler(int sig, siginfo_t* info, void* /*uctx*/) {
+    if (g_native_crash_fd >= 0) {
+        xime_safe_write("\n==== NATIVE CRASH ====\nsignal=");
+        xime_safe_write_hex((uintptr_t)sig);
+        xime_safe_write(" fault_addr=");
+        xime_safe_write_hex((uintptr_t)info->si_addr);
+        xime_safe_write("\nbacktrace:\n");
+        XimeBacktraceState bt;
+        bt.count = 0;
+        _Unwind_Backtrace(xime_trace_fn, &bt);
+        for (int i = 0; i < bt.count; i++) {
+            xime_safe_write("  #");
+            xime_safe_write_hex((uintptr_t)i);
+            xime_safe_write(" ");
+            xime_safe_write_hex(bt.frames[i]);
+            xime_safe_write("\n");
+        }
+        xime_safe_write("==== END ====\n");
+        fsync(g_native_crash_fd);
+    }
+    // 恢复默认处理器后重发信号，交还系统生成 tombstone
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+// 预打开崩溃日志文件并注册信号处理器。fd 在初始化期打开（而非 handler 内），
+// 避免 signal-unsafe 的 open 调用。
+JNIEXPORT void JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeInstallSignalHandler(
+    JNIEnv* env,
+    jobject thiz,
+    jstring user_data_dir
+) {
+    if (g_signal_handler_installed) return;
+    const char* user_dir = env->GetStringUTFChars(user_data_dir, nullptr);
+    if (!user_dir) return;
+
+    // 崩溃日志与 FileLogger 同放 {filesDir}/logs/（rime 目录的上一级）
+    std::string logs_dir = std::string(user_dir) + "/../logs";
+    mkdir(logs_dir.c_str(), 0755);
+    std::string log_path = logs_dir + "/native_crash.log";
+    struct stat st;
+    if (stat(log_path.c_str(), &st) == 0 && st.st_size > 1024 * 1024) {
+        unlink(log_path.c_str());
+    }
+    g_native_crash_fd = open(log_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+
+    // 预热 unwinder，避免信号处理函数内首次执行触发惰性初始化分配内存
+    {
+        XimeBacktraceState warmup;
+        warmup.count = 0;
+        _Unwind_Backtrace(xime_trace_fn, &warmup);
+    }
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = xime_native_crash_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+    sigaction(SIGBUS, &sa, nullptr);
+    sigaction(SIGFPE, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
+
+    g_signal_handler_installed = true;
+    LOGI("native crash signal handler installed, log: %s", log_path.c_str());
+    env->ReleaseStringUTFChars(user_data_dir, user_dir);
 }
 
 } // extern "C"

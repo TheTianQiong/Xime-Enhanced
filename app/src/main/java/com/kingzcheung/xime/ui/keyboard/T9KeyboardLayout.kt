@@ -11,10 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,9 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Language
@@ -37,12 +32,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.kingzcheung.xime.keyboard.GestureAction
+import com.kingzcheung.xime.settings.DisplayMode
+import com.kingzcheung.xime.settings.KeysConfigHelper
+import com.kingzcheung.xime.settings.swipeHandlerFor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,11 +104,14 @@ fun T9KeyboardLayout(
     shadowElevation: Dp = 1.dp,
     shadowShapeRadius: Dp = 8.dp,
     keyCornerRadius: Dp = 8.dp,
+    keySpacingX: Dp? = null,
+    keySpacingY: Dp? = null,
     modifier: Modifier = Modifier,
     onKeyPressDown: ((String) -> Unit)? = null,
     isFloatingMode: Boolean = false,
     specialKeyTextColor: Color = Color.White,
     candidateState: State<CandidateState> = remember { mutableStateOf(CandidateState()) },
+    onGestureAction: ((GestureAction, String) -> Unit)? = null,
 ) {
     val controller = t9Controller
     val configuration = LocalConfiguration.current
@@ -154,6 +157,9 @@ fun T9KeyboardLayout(
         onDelete = ::handleDelete,
         specialKeyTextColor = specialKeyTextColor,
         candidateState = candidateState,
+        keySpacingX = keySpacingX,
+        keySpacingY = keySpacingY,
+        onGestureAction = onGestureAction,
     )
 }
 
@@ -183,6 +189,9 @@ private fun T9KeyboardSwipeOverlay(
     onDelete: () -> Unit,
     specialKeyTextColor: Color = Color.White,
     candidateState: State<CandidateState> = remember { mutableStateOf(CandidateState()) },
+    keySpacingX: Dp? = null,
+    keySpacingY: Dp? = null,
+    onGestureAction: ((GestureAction, String) -> Unit)? = null,
 ) {
     val swipeBubble = rememberSwipeBubbleController()
     var keyboardBounds by remember { mutableStateOf(Rect(0f, 0f, 0f, 0f)) }
@@ -228,39 +237,20 @@ private fun T9KeyboardSwipeOverlay(
             }
             .padding(bottom = if (isFloatingMode || isLandscape) 0.dp else 0.dp)) {
         if (isLandscape) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(vertical = 2.dp, horizontal = 50.dp),
+            // 横屏：去除原左侧候选大面板（候选已在顶部候选栏展示），
+            // 九键布局撑满键盘区域（与全键盘横屏同款 50dp 边距）
+            CompositionLocalProvider(
+                LocalKeyVisualPadding provides PaddingValues(
+                    horizontal = keySpacingX ?: 2.dp,
+                    vertical = keySpacingY ?: 2.dp,
+                )
             ) {
-                Column(
-                    modifier = Modifier
-                        .weight(0.42f)
-                        .fillMaxHeight(),
-                ) {
-                    T9LandscapeCandidatePanel(
-                        uiState = uiState,
-                        callbacks = callbacks,
-                        keyTextColor = keyTextColor,
-                        keyBackgroundColor = keyBackgroundColor,
-                        shadowEnabled = shadowEnabled,
-                        shadowElevation = shadowElevation,
-                        shadowShapeRadius = shadowShapeRadius,
-                        candidateState = candidateState,
-                    )
-                }
-
-                Spacer(modifier = Modifier.weight(0.16f))
-
                 Box(
                     modifier = Modifier
-                        .weight(0.42f)
-                        .fillMaxHeight()
+                        .fillMaxSize()
+                        .padding(vertical = 2.dp, horizontal = 50.dp),
                 ) {
-                    CompositionLocalProvider(
-                        LocalKeyVisualPadding provides PaddingValues(horizontal = 1.dp, vertical = 2.dp)
-                    ) {
-                        T9KeyboardContent(
+                    T9KeyboardContent(
                         onKeyPress = onKeyPress,
                         callbacks = callbacks,
                         uiState = uiState,
@@ -277,13 +267,16 @@ private fun T9KeyboardSwipeOverlay(
                         onDelete = onDelete,
                         compactMode = true,
                         candidateState = candidateState,
+                        onGestureAction = onGestureAction,
                     )
-                    }
                 }
             }
         } else {
             CompositionLocalProvider(
-                LocalKeyVisualPadding provides PaddingValues(horizontal = 2.dp, vertical = 2.dp)
+                LocalKeyVisualPadding provides PaddingValues(
+                    horizontal = keySpacingX ?: 2.dp,
+                    vertical = keySpacingY ?: 2.dp,
+                )
             ) {
                 Column(
                     modifier = Modifier
@@ -308,137 +301,12 @@ private fun T9KeyboardSwipeOverlay(
                         onDelete = onDelete,
                         compactMode = false,
                         candidateState = candidateState,
+                        onGestureAction = onGestureAction,
                     )
                 }
             }
         }
     }
-    }
-}
-
-// ─── 横屏候选面板 — 包装组件 ────────────────────────────────────────
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun T9LandscapeCandidatePanel(
-    uiState: KeyboardUiState,
-    callbacks: KeyboardCallbacks,
-    keyTextColor: Color,
-    keyBackgroundColor: Color,
-    shadowEnabled: Boolean,
-    shadowElevation: Dp,
-    shadowShapeRadius: Dp,
-    candidateState: State<CandidateState> = remember { mutableStateOf(CandidateState()) },
-) {
-    val density = LocalDensity.current
-    val shadowModifier = remember(shadowEnabled, shadowElevation, shadowShapeRadius, density, keyBackgroundColor) {
-        if (shadowEnabled) {
-            val offsetPx = with(density) { shadowElevation.toPx() }
-            val cornerPx = with(density) { shadowShapeRadius.toPx() }
-            val color = crispShadowColor(keyBackgroundColor)
-            Modifier.drawBehind {
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(0f, offsetPx),
-                    size = size,
-                    cornerRadius = CornerRadius(cornerPx)
-                )
-            }
-        } else Modifier
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(shadowModifier)
-            .clip(RoundedCornerShape(LocalKeyCornerRadius.current))
-            .background(keyBackgroundColor)
-    ) {
-        val rimeCandidates = candidateState.value.candidates
-        val rimeComments = candidateState.value.candidateComments
-        if (rimeCandidates.isNotEmpty()) {
-            val scrollState = rememberScrollState()
-            Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(scrollState),
-            ) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth().padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    rimeCandidates.forEachIndexed { index, candidate ->
-                        LandscapeCandidateItem(
-                            index = index + 1,
-                            text = candidate,
-                            comment = rimeComments.getOrElse(index) { "" },
-                            onClick = { callbacks.onCandidateSelect(index) },
-                            textColor = keyTextColor,
-                        )
-                    }
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (candidateState.value.isComposing) "..." else "",
-                    color = keyTextColor.copy(alpha = 0.3f),
-                    fontSize = 14.sp
-                )
-            }
-        }
-    }
-}
-
-// ─── 横屏候选面板 — 子项组件 ──────────────────────────────────────────
-
-@Composable
-private fun LandscapeCandidateItem(
-    index: Int,
-    text: String,
-    comment: String,
-    onClick: () -> Unit,
-    textColor: Color,
-) {
-    val currentOnClick by rememberUpdatedState(onClick)
-    Box(
-        modifier = Modifier
-            .clickable { currentOnClick() }
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "$index",
-                color = textColor.copy(alpha = 0.4f),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Normal,
-                modifier = Modifier.padding(end = 2.dp)
-            )
-            Text(
-                text = text,
-                color = textColor,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (comment.isNotEmpty()) {
-                Text(
-                    text = comment,
-                    color = textColor.copy(alpha = 0.5f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 2.dp)
-                )
-            }
-        }
     }
 }
 
@@ -463,12 +331,49 @@ private fun T9KeyboardContent(
     onDelete: () -> Unit,
     compactMode: Boolean = false,
     candidateState: State<CandidateState> = remember { mutableStateOf(CandidateState()) },
+    onGestureAction: ((GestureAction, String) -> Unit)? = null,
 ) {
     val t9DigitFontSize = if (compactMode) 13.sp else 16.sp
     val ctrlFontSize = if (compactMode) 11.sp else androidx.compose.ui.unit.TextUnit.Unspecified
     val candidateFontSize = if (compactMode) 11.sp else 13.sp
     val specialKeyTextColor = if (uiState.isDarkTheme) Color.White
         else KeyboardThemes.getAccentColor(uiState.themeId, false)
+
+    // 数字键滑动手势（keyboard.t9.keys，热重载经 configVersion 感知）：
+    // 上滑默认直接上屏数字（T9 模式 onKeyPress(数字) 会进拼音数字码组合，须走 onCommitText），
+    // 下滑默认绑定快捷编辑动作。提示开关只控制提示显示；组件内上滑触发只看回调绑定，
+    // 提示关闭/横屏紧凑时手势仍可用。上滑键面提示尊重 display: bubble（仅气泡不印键面）。
+    val configVersion by KeysConfigHelper.configVersion.collectAsState()
+    val swipeHints = rememberSwipeHintsEnabled()
+    val hintsActive = !compactMode
+    val commitDirect: (String) -> Unit =
+        { text -> callbacks.onCommitText?.invoke(text) ?: onKeyPress(text) }
+
+    fun swipesFor(id: String): T9KeySwipes {
+        val gesture = KeysConfigHelper.getT9KeyGesture(id) ?: return T9KeySwipes()
+        val upHint = gesture.swipeUp?.let { it.label.ifEmpty { it.value } }
+        val downHint = gesture.swipeDown?.let { it.label.ifEmpty { it.value } }
+        // display 三态：key=仅键面提示（无气泡）、bubble=仅滑动气泡、both=键面+气泡。
+        // 内置默认全为 key（无气泡）：上滑对象格式 { value: "N" } 默认 key，下滑对象格式同。
+        // SwipeableKeyButton 键面提示取 swipeUpKeyLabel ?: swipeText（null 回退气泡文本），
+        // bubble 模式传空串显式压制键面显示。手势回调独立于提示与 display。
+        val swipeUpKeyLabel = when {
+            !swipeHints.up || !hintsActive -> null
+            gesture.swipeUp?.display == DisplayMode.BUBBLE -> ""
+            else -> upHint
+        }
+        return T9KeySwipes(
+            onSwipeUp = swipeHandlerFor(gesture.swipeUp, commitDirect, onGestureAction),
+            onSwipeDown = swipeHandlerFor(gesture.swipeDown, commitDirect, onGestureAction),
+            swipeUpText = if (swipeHints.up && hintsActive &&
+                gesture.swipeUp?.display != DisplayMode.KEY) upHint else null,
+            swipeDownText = if (swipeHints.down && hintsActive &&
+                gesture.swipeDown?.display != DisplayMode.KEY) downHint else null,
+            swipeUpKeyLabel = swipeUpKeyLabel,
+            swipeDownKeyLabel = if (swipeHints.down && hintsActive &&
+                gesture.swipeDown?.display != DisplayMode.BUBBLE) downHint else null,
+        )
+    }
 
     val density = LocalDensity.current
     val candidateShadowModifier = remember(shadowEnabled, shadowElevation, shadowShapeRadius, density, keyBackgroundColor) {
@@ -510,10 +415,13 @@ private fun T9KeyboardContent(
             ) {
                 val showCandidates = controller.leftPanelState != T9InputController.LeftPanelState.IDLE
                 val currentFirstOptions = controller.firstOptions
+                // 空闲态符号列表来自 xime.yaml keyboard.t9.side_symbols（可自定义，>4 滚动）
+                val configVersion by KeysConfigHelper.configVersion.collectAsState()
+                val t9SideSymbols = remember(configVersion) { KeysConfigHelper.getT9SideSymbols() }
                 val displayItems: List<String> = if (showCandidates) {
                     currentFirstOptions.map { it.pinyin }
                 } else {
-                    listOf("，", "。", "？", "！")
+                    t9SideSymbols
                 }
                 if (displayItems.size <= 4) {
                     Column(
@@ -561,24 +469,40 @@ private fun T9KeyboardContent(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
-                        itemsIndexed(displayItems) { index, _ ->
-                            val option = currentFirstOptions[index]
-                            val isSelected = controller.leftPanelState == T9InputController.LeftPanelState.SELECTION &&
-                                    controller.selectedOption == option &&
-                                    controller.isSelectedOptionInCurrentCandidates()
-                            CandidateItem(
-                                text = option.pinyin,
-                                onClick = { controller.onChoiceSelected(option) },
-                                onPress = { onKeyPressDown?.invoke(option.pinyin) },
-                                textColor = keyTextColor,
-                                backgroundColor = keyBackgroundColor,
-                                accentColor = accentColor,
-                                fontSize = candidateFontSize,
-                                isSelected = isSelected,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(if (compactMode) 26.dp else 32.dp)
-                            )
+                        itemsIndexed(displayItems) { index, item ->
+                            if (showCandidates) {
+                                val option = currentFirstOptions[index]
+                                val isSelected = controller.leftPanelState == T9InputController.LeftPanelState.SELECTION &&
+                                        controller.selectedOption == option &&
+                                        controller.isSelectedOptionInCurrentCandidates()
+                                CandidateItem(
+                                    text = option.pinyin,
+                                    onClick = { controller.onChoiceSelected(option) },
+                                    onPress = { onKeyPressDown?.invoke(option.pinyin) },
+                                    textColor = keyTextColor,
+                                    backgroundColor = keyBackgroundColor,
+                                    accentColor = accentColor,
+                                    fontSize = candidateFontSize,
+                                    isSelected = isSelected,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(if (compactMode) 26.dp else 32.dp)
+                                )
+                            } else {
+                                CandidateItem(
+                                    text = item,
+                                    onClick = { onKeyPress(item) },
+                                    onPress = { onKeyPressDown?.invoke(item) },
+                                    textColor = keyTextColor,
+                                    backgroundColor = keyBackgroundColor,
+                                    accentColor = accentColor,
+                                    fontSize = candidateFontSize,
+                                    isSelected = false,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(if (compactMode) 26.dp else 32.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -608,6 +532,8 @@ private fun T9KeyboardContent(
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
                 NineKeyButton(
+                    swipes = swipesFor("1"),
+
                     digit = "1", letters = "分词",
                     onClick = { controller.onDigitPressed("1") },
                     backgroundColor = keyBackgroundColor, textColor = keyTextColor,
@@ -617,6 +543,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("2"),
                     digit = "2", letters = "ABC", longPressItems = listOf("A", "B", "C"),
                     onClick = { controller.onDigitPressed("2") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -631,6 +558,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("3"),
                     digit = "3", letters = "DEF", longPressItems = listOf("D", "E", "F"),
                     onClick = { controller.onDigitPressed("3") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -649,6 +577,7 @@ private fun T9KeyboardContent(
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
                 T9DigitKey(
+                    swipes = swipesFor("4"),
                     digit = "4", letters = "GHI", longPressItems = listOf("G", "H", "I"),
                     onClick = { controller.onDigitPressed("4") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -663,6 +592,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("5"),
                     digit = "5", letters = "JKL", longPressItems = listOf("J", "K", "L"),
                     onClick = { controller.onDigitPressed("5") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -677,6 +607,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("6"),
                     digit = "6", letters = "MNO", longPressItems = listOf("M", "N", "O"),
                     onClick = { controller.onDigitPressed("6") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -695,6 +626,7 @@ private fun T9KeyboardContent(
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
                 T9DigitKey(
+                    swipes = swipesFor("7"),
                     digit = "7", letters = "PQRS", longPressItems = listOf("P", "Q", "R", "S"),
                     onClick = { controller.onDigitPressed("7") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -709,6 +641,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("8"),
                     digit = "8", letters = "TUV", longPressItems = listOf("T", "U", "V"),
                     onClick = { controller.onDigitPressed("8") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -723,6 +656,7 @@ private fun T9KeyboardContent(
                     fontSize = t9DigitFontSize,
                 )
                 T9DigitKey(
+                    swipes = swipesFor("9"),
                     digit = "9", letters = "WXYZ", longPressItems = listOf("W", "X", "Y", "Z"),
                     onClick = { controller.onDigitPressed("9") },
                     onLongPressSelect = { letter -> controller.clearAll(); onKeyPress(letter) },
@@ -830,10 +764,23 @@ private fun T9KeyboardContent(
 
 // ─── 九键数字键（可长按） ──────────────────────────────────────────────
 
+/** 九键数字键的滑动配置：回调 + 提示文本（均受 keyboard.t9.keys 配置与提示开关控制）。 */
+private data class T9KeySwipes(
+    val onSwipeUp: (() -> Unit)? = null,
+    val onSwipeDown: (() -> Unit)? = null,
+    /** 上滑滑动气泡文本（display: key 时不传） */
+    val swipeUpText: String? = null,
+    /** 下滑滑动气泡文本（display: key 时不传） */
+    val swipeDownText: String? = null,
+    /** 上滑键面提示（空串 = 显式不印键面，bubble 模式用；null = 不显示） */
+    val swipeUpKeyLabel: String? = null,
+    val swipeDownKeyLabel: String? = null,
+)
+
 /**
  * 九键数字键，复用 [SwipeableKeyButton] 的长按弹出逻辑。
  * - 主体显示字母（ABC），右上角叠加数字浮标。
- * - 点按走 [onClick]，长按走 [onLongPressSelect]。
+ * - 点按走 [onClick]，长按走 [onLongPressSelect]，上/下滑走 [onSwipeUp]/[onSwipeDown]。
  */
 @Composable
 private fun T9DigitKey(
@@ -851,10 +798,12 @@ private fun T9DigitKey(
     shadowElevation: Dp = 1.dp,
     shadowShapeRadius: Dp = 8.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+    swipes: T9KeySwipes = T9KeySwipes(),
 ) {
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongPressSelect by rememberUpdatedState(onLongPressSelect)
     val currentOnPress by rememberUpdatedState(onPress)
+    val currentSwipes by rememberUpdatedState(swipes)
 
     SwipeableKeyButton(
         text = letters,
@@ -868,6 +817,12 @@ private fun T9DigitKey(
         onLongPressSelect = { letter -> currentOnLongPressSelect?.invoke(letter) },
         onSwipeStateChange = onSwipeStateChange,
         badgeText = digit,
+        swipeText = currentSwipes.swipeUpText,
+        swipeDownText = currentSwipes.swipeDownText,
+        swipeUpKeyLabel = currentSwipes.swipeUpKeyLabel,
+        swipeDownKeyLabel = currentSwipes.swipeDownKeyLabel,
+        onSwipe = currentSwipes.onSwipeUp?.let { handler -> { _: String -> handler() } },
+        onSwipeDown = currentSwipes.onSwipeDown?.let { handler -> { _: String -> handler() } },
         shadowEnabled = shadowEnabled,
         shadowElevation = shadowElevation,
         shadowShapeRadius = shadowShapeRadius,
@@ -918,7 +873,8 @@ private fun CandidateItem(
                     fontSize = fontSize,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
-                    maxLines = 1
+                    maxLines = 1,
+                    fontFamily = AppFonts.candidateFontFamily
                 )
             }
         } else {
@@ -928,7 +884,8 @@ private fun CandidateItem(
                 fontSize = fontSize,
                 fontWeight = FontWeight.Normal,
                 textAlign = TextAlign.Center,
-                maxLines = 1
+                maxLines = 1,
+                fontFamily = AppFonts.candidateFontFamily
             )
         }
     }
@@ -948,6 +905,7 @@ private fun NineKeyButton(
     shadowElevation: Dp = 1.dp,
     shadowShapeRadius: Dp = 8.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    swipes: T9KeySwipes = T9KeySwipes(),
 ) {
     SwipeableKeyButton(
         text = letters,
@@ -957,6 +915,12 @@ private fun NineKeyButton(
         modifier = modifier,
         onPress = onPress,
         badgeText = digit,
+        swipeText = swipes.swipeUpText,
+        swipeDownText = swipes.swipeDownText,
+        swipeUpKeyLabel = swipes.swipeUpKeyLabel,
+        swipeDownKeyLabel = swipes.swipeDownKeyLabel,
+        onSwipe = swipes.onSwipeUp?.let { handler -> { _: String -> handler() } },
+        onSwipeDown = swipes.onSwipeDown?.let { handler -> { _: String -> handler() } },
         shadowEnabled = shadowEnabled,
         shadowElevation = shadowElevation,
         shadowShapeRadius = shadowShapeRadius,

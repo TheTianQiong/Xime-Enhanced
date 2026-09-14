@@ -33,32 +33,7 @@ toolbarButtons:
 network:
   allowCustomHosts: true
 
-# 配置字段
-configSchema:
-  - key: apiKey
-    label: API Key
-    type: secret
-    placeholder: 输入 LLM API Key
-    helpText: OpenAI 兼容接口的 API Key
-  - key: baseUrl
-    label: 接口地址
-    type: text
-    defaultValue: https://api.openai.com/v1
-    helpText: OpenAI 兼容接口地址（/chat/completions 前缀），域名将自动获得联网授权
-  - key: model
-    label: 模型
-    type: text
-    defaultValue: gpt-4o-mini
-  - key: targetLang
-    label: 目标语言
-    type: text
-    defaultValue: 简体中文
-    helpText: 翻译目标语言（如 简体中文 / English / 日本語）
-  - key: prompt
-    label: 翻译模板
-    type: textarea
-    defaultValue: "你是专业翻译。请把下面的内容翻译成{targetLang}，只输出译文，不要解释、不要引号。\n{context}"
-    helpText: 翻译 prompt 模板，{context} 替换为待翻译文本，{targetLang} 替换为目标语言
+# 能力声明
 # 能力声明
 capabilities:
   tool:

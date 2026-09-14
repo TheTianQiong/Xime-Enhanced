@@ -5,10 +5,11 @@
 --   宿主  = 事件投递（conflated 快照）+ InfoPanel 渲染（display: passive）+ action 回调
 --
 -- 事件语义（snake_case）：
---   text_committed: { committed_text, session_total_chars, session_total_commits }
+--   text_committed: { committed_text, session_total_chars, session_total_commits, is_paste }
 --     - session_* 为宿主进程生命周期累计；conflated 丢中间事件不影响统计（差值增量）
 --     - 宿主重启后 session 归零：delta 为负时视为新会话起点
 --     - 插件重载后：last_seen 持久化，首次差值按 0，避免重复累计
+--     - is_paste = 粘贴性质上屏（剪贴板点选/编辑面板提交），不计入打字量
 --   input_changed:  { input_text }  当前编码快照（高频，仅内存不落盘）
 --
 -- 沙箱约束：无 os/io——日期与速度的时间源为 host.crypto.utcTime（UTC），
@@ -182,13 +183,17 @@ function plugin.onPluginEvent(eventType, payload)
       -- 宿主重启（session 归零）：新会话起点，本快照即增量
       delta = sessionChars
     end
-    if delta > 0 then
-      totalChars = totalChars + delta
-      local d = todayStr()
-      daily[d] = (daily[d] or 0) + delta
-      recordSpeed(nowSec(), delta)
+    -- is_paste（键盘剪贴板点选/编辑面板提交）：事件照收以推进差值基准，
+    -- 但粘贴不是打字，不计字数/提交次数/速度
+    if not payload.is_paste then
+      if delta > 0 then
+        totalChars = totalChars + delta
+        local d = todayStr()
+        daily[d] = (daily[d] or 0) + delta
+        recordSpeed(nowSec(), delta)
+      end
+      totalCommits = totalCommits + 1
     end
-    totalCommits = totalCommits + 1
     persist()
   elseif eventType == "input_changed" and payload ~= nil then
     -- 高频事件：只更新内存态，不写盘
@@ -203,34 +208,34 @@ function plugin.getPanelState(inputText)
   local hint = nextTitleHint()
   local now = nowSec()
   local ui = {
-    { type = "section", title = "🏆 称号" },
+    { type = "section", label = "🏆 称号" },
     { type = "metric",  label = "当前称号", value = (badge or "") .. " " .. title },
   }
   if hint ~= nil then
-    table.insert(ui, { type = "text", content = hint, style = "caption" })
+    table.insert(ui, { type = "text", value = hint, style = "caption" })
   else
-    table.insert(ui, { type = "text", content = "👑 已是最高称号", style = "caption" })
+    table.insert(ui, { type = "text", value = "👑 已是最高称号", style = "caption" })
   end
 
-  table.insert(ui, { type = "section", title = "⚡ 速度" })
+  table.insert(ui, { type = "section", label = "⚡ 速度" })
   table.insert(ui, { type = "metric", label = "💨 最近 1 分钟", value = tostring(currentKpm(now)), unit = "字/分" })
 
   local t = todayStr()
-  table.insert(ui, { type = "section", title = "📅 今日" })
+  table.insert(ui, { type = "section", label = "📅 今日" })
   table.insert(ui, { type = "metric", label = "✍️ 输入字数", value = tostring(daily[t] or 0), unit = "字" })
   table.insert(ui, { type = "metric", label = "🔢 提交次数", value = tostring(totalCommits) })
 
-  table.insert(ui, { type = "section", title = "🗓 近 7 天" })
+  table.insert(ui, { type = "section", label = "🗓 近 7 天" })
   table.insert(ui, { type = "metric", label = "✍️ 输入字数", value = tostring(sumRecentDays(7)), unit = "字" })
 
-  table.insert(ui, { type = "section", title = "📆 本月" })
+  table.insert(ui, { type = "section", label = "📆 本月" })
   table.insert(ui, { type = "metric", label = "✍️ 输入字数", value = tostring(sumMonth(t:sub(1, 6))), unit = "字" })
 
   if currentInput ~= "" then
-    table.insert(ui, { type = "text", content = "⌨️ 正在输入: " .. currentInput, style = "caption" })
+    table.insert(ui, { type = "text", value = "⌨️ 正在输入: " .. currentInput, style = "caption" })
   end
   table.insert(ui, { type = "divider" })
-  table.insert(ui, { type = "action", label = "🗑️ 清零统计", actionId = "reset" })
+  table.insert(ui, { type = "button", label = "🗑️ 清零统计", key = "reset" })
 
   return { inputText = inputText or "", items = {}, ui = ui, loading = false }
 end

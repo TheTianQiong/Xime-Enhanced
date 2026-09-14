@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kingzcheung.xime.keyboard.GestureAction
 import com.kingzcheung.xime.keyboard.OverlayRoute
 import com.kingzcheung.xime.handwriting.HandwritingCandidate
@@ -75,6 +76,7 @@ fun KeyboardLayoutScreen(
                 val overlayRoute = when (value) {
                     "emoji" -> OverlayRoute.Emoji
                     "symbol" -> OverlayRoute.Symbol
+                    "clipboard" -> OverlayRoute.Clipboard(0)
                     else -> null
                 }
                 overlayRoute?.let { viewModel.showOverlay(it) }
@@ -84,6 +86,10 @@ fun KeyboardLayoutScreen(
                 FileLogger.i("XimeKeyboard", "earth key toggle_ascii tapped, ui ascii=${uiState.isAsciiMode}")
                 viewModel.resetShift()
                 callbacks.onKeyPress("ime_switch", uiState.isAsciiMode)
+            }
+
+            GestureAction.TOGGLE_SHIFT -> {
+                viewModel.toggleShift()
             }
 
             else -> callbacks.onGestureAction?.invoke(action, value) ?: Unit
@@ -156,6 +162,9 @@ fun KeyboardLayoutScreen(
             }
 
             is KeyboardLayoutState.Number -> {
+                // 从全键盘（?123 在左下角）进入数字键盘时，返回键放到左下角与进入位置对齐；
+                // 九键/笔画/手写进入时保持「符号键在最左下角」的九键习惯
+                val lastMainLayout by viewModel.lastMainLayout.collectAsStateWithLifecycle()
                 NumberKeyboardLayout(
                     onKeyPress = onKeyPress,
                     keyBackgroundColor = keyBgColor,
@@ -167,10 +176,14 @@ fun KeyboardLayoutScreen(
                     shadowElevation = kbShadow.elevation.dp,
                     shadowShapeRadius = kbShadow.shapeRadius.dp,
                     keyCornerRadius = kbKey.cornerRadius.dp,
+                    keySpacingX = kbKey.spacingFor("number").first?.dp,
+                    keySpacingY = kbKey.spacingFor("number").second?.dp,
                     modifier = modifier,
                     onKeyPressDown = callbacks.onKeyPressDown,
                     isFloatingMode = uiState.isFloatingMode,
                     specialKeyTextColor = specialKeyTextColor,
+                    backKeyOnLeft = lastMainLayout is KeyboardLayoutState.Chinese ||
+                        lastMainLayout is KeyboardLayoutState.English,
                 )
             }
 
@@ -187,6 +200,8 @@ fun KeyboardLayoutScreen(
                     shadowElevation = kbShadow.elevation.dp,
                     shadowShapeRadius = kbShadow.shapeRadius.dp,
                     keyCornerRadius = kbKey.cornerRadius.dp,
+                    keySpacingX = kbKey.spacingFor("symbol").first?.dp,
+                    keySpacingY = kbKey.spacingFor("symbol").second?.dp,
                     modifier = modifier,
                     onKeyPressDown = callbacks.onKeyPressDown,
                     isFloatingMode = uiState.isFloatingMode,
@@ -206,10 +221,13 @@ fun KeyboardLayoutScreen(
                     shadowElevation = kbShadow.elevation.dp,
                     shadowShapeRadius = kbShadow.shapeRadius.dp,
                     keyCornerRadius = kbKey.cornerRadius.dp,
+                    keySpacingX = kbKey.spacingFor("stroke").first?.dp,
+                    keySpacingY = kbKey.spacingFor("stroke").second?.dp,
                     modifier = modifier,
                     onKeyPressDown = callbacks.onKeyPressDown,
                     isFloatingMode = uiState.isFloatingMode,
                     specialKeyTextColor = specialKeyTextColor,
+                    onGestureAction = onGestureAction,
                 )
             }
 
@@ -247,10 +265,13 @@ fun KeyboardLayoutScreen(
                         shadowElevation = kbShadow.elevation.dp,
                         shadowShapeRadius = kbShadow.shapeRadius.dp,
                         keyCornerRadius = kbKey.cornerRadius.dp,
+                        keySpacingX = kbKey.spacingFor("t9").first?.dp,
+                        keySpacingY = kbKey.spacingFor("t9").second?.dp,
                         modifier = modifier,
                         onKeyPressDown = callbacks.onKeyPressDown,
                         isFloatingMode = uiState.isFloatingMode,
                         specialKeyTextColor = specialKeyTextColor,
+                        onGestureAction = onGestureAction,
                     )
                 }
             }

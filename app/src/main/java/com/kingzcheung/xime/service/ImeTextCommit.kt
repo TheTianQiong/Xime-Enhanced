@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.service
 
+import com.kingzcheung.xime.util.FileLogger
 import android.os.Build
 import android.util.Log
 import android.view.KeyEvent
@@ -49,7 +50,7 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
         return try {
             val imageFile = File(imagePath)
             if (!imageFile.exists()) {
-                Log.e(XimeInputMethodService.TAG, "Image file not found: $imagePath")
+                FileLogger.e(XimeInputMethodService.TAG, "Image file not found: $imagePath")
                 return false
             }
 
@@ -99,7 +100,7 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
             service.currentInputConnection?.commitContent(inputContentInfo, flags, null) ?: false
             
         } catch (e: Exception) {
-            Log.e(XimeInputMethodService.TAG, "Failed to commit image", e)
+            FileLogger.e(XimeInputMethodService.TAG, "Failed to commit image", e)
             false
         }
     }
@@ -126,12 +127,13 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
         }
         // 标记为已消费：候选栏/剪贴板点选上屏后不再重复出现在候选栏
         service.clipboardManager.markConsumed(text)
-        service.commitText(text)
+        // 粘贴不计打字统计（不投 text_committed），联想照常
+        service.commitPastedText(text)
         service.clipboardManager.copyToSystemClipboard(text)
     }
 
     internal fun commitClipboardText(text: String) {
-        service.commitText(text)
+        service.commitPastedText(text)
     }
 
     internal fun deleteClipboardChars(count: Int) {
@@ -154,9 +156,9 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
                 imageFile
             )
         } catch (e: IllegalArgumentException) {
-            Log.w(XimeInputMethodService.TAG, "FileProvider unavailable, falling back to MediaStore", e)
+            FileLogger.w(XimeInputMethodService.TAG, "FileProvider unavailable, falling back to MediaStore", e)
         } catch (e: Exception) {
-            Log.w(XimeInputMethodService.TAG, "FileProvider getUriForFile failed, falling back to MediaStore", e)
+            FileLogger.w(XimeInputMethodService.TAG, "FileProvider getUriForFile failed, falling back to MediaStore", e)
         }
 
         return insertImageToMediaStore(imageFile, mimeType)
@@ -165,7 +167,7 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
     /** 把图片插入 MediaStore（Pictures/Xime），返回系统 content URI。 */
     private fun insertImageToMediaStore(imageFile: File, mimeType: String): Uri? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            Log.e(XimeInputMethodService.TAG, "MediaStore fallback requires API 29+, image commit failed")
+            FileLogger.e(XimeInputMethodService.TAG, "MediaStore fallback requires API 29+, image commit failed")
             return null
         }
         return try {
@@ -192,7 +194,7 @@ internal class ImeTextCommit(private val service: XimeInputMethodService) {
                 throw e
             }
         } catch (e: Exception) {
-            Log.e(XimeInputMethodService.TAG, "MediaStore insert failed", e)
+            FileLogger.e(XimeInputMethodService.TAG, "MediaStore insert failed", e)
             null
         }
     }

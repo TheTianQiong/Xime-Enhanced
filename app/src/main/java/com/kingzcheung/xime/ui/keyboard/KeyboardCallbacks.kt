@@ -2,6 +2,7 @@ package com.kingzcheung.xime.ui.keyboard
 
 import com.kingzcheung.xime.keyboard.GestureAction
 import com.kingzcheung.xime.rime.RimeComposition
+import com.kingzcheung.xime.rime.RimeProcessResult
 import com.kingzcheung.xime.viewmodel.SchemaSwitchUiState
 
 data class KeyboardCallbacks(
@@ -9,6 +10,8 @@ data class KeyboardCallbacks(
     val onKeyPressDown: ((String) -> Unit)? = null,
     val onKeyRelease: ((String) -> Unit)? = null,
     val onCandidateSelect: (Int) -> Unit,
+    // 长按候选删除自造词：index 为候选栏显示索引（候选栏→服务层透传）
+    val onCandidateDelete: ((Int) -> Unit)? = null,
     val onAssociationSelect: ((Int) -> Unit)? = null,
     val onClearAssociation: (() -> Unit)? = null,
     val onToggleDarkMode: (() -> Unit)? = null,
@@ -95,7 +98,10 @@ data class KeyboardCallbacks(
      * T9 键盘状态变更后通知服务层刷新 UI（候选区、preedit 等）。
      * 携带 flush 后一次取回的 composition，服务层直接应用，避免内部重复 getComposition。
      */
-    var onT9RefreshComposition: ((RimeComposition) -> Unit)? = null,
+    var onT9RefreshComposition: ((RimeComposition, List<com.kingzcheung.xime.service.T9CandidateInjection>) -> Unit)? = null,
+    /** T9 候选词变换（hotPath 插件能力）：T9 控制器后台取数后调用，
+     *  返回带引擎锚点的插件候选注入列表（text 追加项），null/空 = 不干预。 */
+    val onTCandidateTransform: ((RimeProcessResult) -> List<com.kingzcheung.xime.service.T9CandidateInjection>?)? = null,
     val onShowQuickSendForm: (() -> Unit)? = null,
     /**
      * 从剪贴板面板主动拉取远端剪贴板内容（仅剪贴板同步已启用时非空）。
@@ -103,8 +109,10 @@ data class KeyboardCallbacks(
      */
     val onClipboardPullRemote: (() -> Unit)? = null,
     val onHideQuickSendForm: (() -> Unit)? = null,
-    val onQuickSendEditItem: ((Long, String) -> Unit)? = null,
+    val onQuickSendEditItem: ((Long, String, String) -> Unit)? = null,
     val onQuickSendFormFocusChange: ((Boolean) -> Unit)? = null,
+    /** 快捷发送表单"触发编码"输入框焦点变化（决定按键输入路由到编码框）。 */
+    val onQuickSendCodeFocusChange: ((Boolean) -> Unit)? = null,
     /**
      * 全键盘（中文/英文）切离至其他键盘（数字/符号）时调用。
      * 服务层负责上屏首位候选词或待确认英文，再由键盘层切换布局。

@@ -64,6 +64,21 @@ object PluginManager {
     @Volatile
     var ipcHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi)? = null
 
+    /**
+     * 宿主快捷发送只读 API 提供者（app 层注入，读 ClipboardManager 内存缓存）。
+     * 仅当插件 manifest 声明 `capabilities.quick_send_read: true` 时，
+     * 生命周期管理器才会调用本工厂（未声明插件拿不到 host.quickSend）。
+     */
+    @Volatile
+    var quickSendHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.QuickSendHostApi)? = null
+
+    /**
+     * 宿主剪贴板只读 API 提供者（app 层注入，读系统剪贴板）。
+     * 仅当插件 manifest 声明 `capabilities.clipboard_read: true` 时注入。
+     */
+    @Volatile
+    var clipboardHostApiFactory: ((pluginId: String) -> com.kingzcheung.xime.plugin.core.lua.ClipboardHostApi)? = null
+
     private var frameworkContext: PluginFrameworkContext? = null
     private val _loadedPluginsFlow = MutableStateFlow<Map<String, LoadedPluginInfo>>(emptyMap())
     private val _pluginInstancesFlow = MutableStateFlow<Map<String, IPluginEntryClass>>(emptyMap())

@@ -61,6 +61,9 @@ interface ClipboardDao {
     @Query("UPDATE clipboard_entries SET text = :text, timestamp = :now WHERE id = :id")
     suspend fun updateText(id: Long, text: String, now: Long)
 
+    @Query("UPDATE clipboard_entries SET text = :text, code = :code, timestamp = :now WHERE id = :id")
+    suspend fun updateQuickSendItem(id: Long, text: String, code: String, now: Long)
+
     @Query("UPDATE clipboard_entries SET consumed = 1 WHERE id = :id")
     suspend fun markConsumed(id: Long)
 
@@ -107,14 +110,15 @@ interface ClipboardDao {
     suspend fun countQuickSend(): Int
 
     @Transaction
-    suspend fun insertQuickSend(text: String, now: Long, maxQuickSend: Int) {
+    suspend fun insertQuickSend(text: String, code: String, now: Long, maxQuickSend: Int) {
         val existing = findQuickSendByText(text)
         if (existing != null) {
-            updateTimestamp(existing.id, now)
+            updateQuickSendItem(existing.id, text, code, now)
         } else {
             insert(
                 ClipboardEntry(
                     text = text,
+                    code = code,
                     timestamp = now,
                     isPinned = true,
                     isQuickSend = true

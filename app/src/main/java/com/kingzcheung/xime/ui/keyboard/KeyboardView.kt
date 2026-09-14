@@ -6,8 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,11 +17,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +100,12 @@ fun KeyboardView(
     candidateState: State<CandidateState> = remember { mutableStateOf(CandidateState()) },
     voiceAmplitudeState: State<Float> = remember { mutableFloatStateOf(0f) },
     voiceSpectrumState: State<FloatArray> = remember { mutableStateOf(FloatArray(16)) },
+    /**
+     * 非按键交互（符号/表情面板、菜单栏、候选栏按钮等）的振动钩子。
+     * 按键本身的反馈走 onKeyPressDown 回调（服务层 FeedbackManager），
+     * 此处只覆盖没有经过按键回调链路的点击交互，宿主按按键振动同款语义实现。
+     */
+    onHapticFeedback: (() -> Unit)? = null,
 ) {
     val isShifted by viewModel.isShifted.collectAsStateWithLifecycle()
     val keyboardState by viewModel.keyboardState.collectAsStateWithLifecycle()
@@ -111,10 +125,11 @@ fun KeyboardView(
 
     val t9Controller = remember {
         T9InputController(
-            onCompositionRefresh = { composition ->
-                callbacks.onT9RefreshComposition?.invoke(composition)
+            onCompositionRefresh = { composition, snapshots ->
+                callbacks.onT9RefreshComposition?.invoke(composition, snapshots)
             },
             onRightCommitUndone = callbacks.onT9RightCommitUndone,
+            candidateTransform = callbacks.onTCandidateTransform,
         )
     }
 
@@ -233,6 +248,9 @@ fun KeyboardView(
     ) {
     Box(modifier = contentModifier) {
         Box {
+        // 长按候选删除自造词：确认覆盖层状态（键盘视图内渲染，不弹独立
+        // 窗口——焦点型弹窗会抢焦点导致 IME 被系统收起）
+        var deletePendingIndex by remember { mutableStateOf<Int?>(null) }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -290,22 +308,26 @@ fun KeyboardView(
                     accentColor = accentColor,
                     isFocused = state.quickSendFormFocused,
                     initialText = state.quickSendEditingItemText,
+                    initialCode = state.quickSendEditingItemCode,
                     cardBgColor = keyBgColor,
                     editingItemId = state.quickSendEditingItemId,
-                    onClose = { text: String ->
+                    onClose = { text: String, code: String ->
                         android.util.Log.d("QuickSendForm", "onClose: textLen=${text.length}, editingId=${state.quickSendEditingItemId}, showForm=${state.showQuickSendForm}")
                         if (text.isNotBlank()) {
                             val editingId = state.quickSendEditingItemId
                             if (editingId != null) {
-                                viewModel.updateQuickSendItem(editingId, text)
+                                viewModel.updateQuickSendItem(editingId, text, code)
                             } else {
-                                viewModel.addQuickSendText(text)
+                                viewModel.addQuickSendText(text, code)
                             }
                         }
                         callbacks.onHideQuickSendForm?.invoke()
                     },
                     onFocusChange = { focused: Boolean ->
                         callbacks.onQuickSendFormFocusChange?.invoke(focused)
+                    },
+                    onCodeFocusChange = { focused: Boolean ->
+                        callbacks.onQuickSendCodeFocusChange?.invoke(focused)
                     },
                 )
             }
@@ -390,7 +412,10 @@ fun KeyboardView(
                             }
                         })
                     }
-                    ToolbarAction(item, onClick)
+                    ToolbarAction(item) {
+                        onHapticFeedback?.invoke()
+                        onClick()
+                    }
                 },
                 visuals = CandidateBarVisuals(
                     backgroundColor = Color.Transparent,
@@ -403,6 +428,9 @@ fun KeyboardView(
                 callbacks = CandidateBarCallbacks(
                     onCandidateSelect = { index ->
                         if (showHandwritingCandidates && index in handwritingCandidates.indices) {
+                            // 手写候选点选绕过了服务层 selectCandidate（其入口统一有按键反馈），
+                            // 这里补齐同款反馈，保证各键盘点选手感一致
+                            callbacks.onKeyPressDown?.invoke("standard")
                             if (isHandwritingLookup) {
                                 // 手写查词：直接上屏（原有行为）
                                 val ch = handwritingCandidates[index]
@@ -412,7 +440,7 @@ fun KeyboardView(
                                 handwritingClearSignal++
                             } else {
                                 // 兜底路径（AssociationOnly 正常走 onAssociationSelect）：
-                                // 与点选替换同语义；候选栏保留供继续改选
+                                // 与点选替换同语义；点选即结束选择期，候选栏清空
                                 val ch = handwritingCandidates[index]
                                 if (index > 0 && handwritingLastSegLen > 0) {
                                     val newTail = handwritingTail.dropLast(handwritingLastSegLen) + ch
@@ -422,13 +450,19 @@ fun KeyboardView(
                                 }
                                 handwritingActiveLen = 0
                                 callbacks.onHandwritingFinalize?.invoke()
+                                handwritingCandidates = emptyList()
+                                handwritingComments = emptyList()
                                 handwritingClearSignal++
                             }
                         } else {
                             callbacks.onCandidateSelect(index)
                         }
                     },
+                    onCandidateLongPress = { index ->
+                        deletePendingIndex = index
+                    },
                     onClearAssociation = {
+                        onHapticFeedback?.invoke()
                         if (showHandwritingCandidates) {
                             handwritingCandidates = emptyList()
                             handwritingComments = emptyList()
@@ -439,6 +473,7 @@ fun KeyboardView(
                     },
                     onLogoClick = { viewModel.showOverlay(OverlayRoute.Menu) },
                     onBack = {
+                        onHapticFeedback?.invoke()
                         if (showHandwritingCandidates) {
                             handwritingCandidates = emptyList()
                             handwritingComments = emptyList()
@@ -456,10 +491,14 @@ fun KeyboardView(
                         }
                     },
                     onHideKeyboard = {
+                        onHapticFeedback?.invoke()
                         callbacks.onHideKeyboard?.invoke()
                         viewModel.resetKeyboard(state.isAsciiMode, state.currentSchemaId)
                     },
-                    onShowMoreCandidates = { viewModel.showOverlay(OverlayRoute.CandidatePage) },
+                    onShowMoreCandidates = {
+                        onHapticFeedback?.invoke()
+                        viewModel.showOverlay(OverlayRoute.CandidatePage)
+                    },
                     onInputTextClick = {
                         if (candidateState.value.inputText.isNotEmpty()) {
                             callbacks.onClipboardSelect?.invoke(candidateState.value.inputText)
@@ -467,6 +506,9 @@ fun KeyboardView(
                     },
                     onAssociationSelect = { index ->
                         if (showHandwritingCandidates && index in handwritingCandidates.indices) {
+                            // 手写候选点选绕过了服务层 onAssociationSelect（其入口统一有按键反馈），
+                            // 这里补齐同款反馈，保证各键盘点选手感一致
+                            callbacks.onKeyPressDown?.invoke("standard")
                             if (isHandwritingLookup) {
                                 // 手写查词：查词结果直接上屏（原有行为，与叠写状态无关）
                                 val ch = handwritingCandidates[index]
@@ -475,14 +517,16 @@ fun KeyboardView(
                                 handwritingComments = emptyList()
                                 handwritingClearSignal++
                             } else if (index == 0) {
-                                // 首选已自动上屏：点选仅固化当前字并触发联想。
-                                // 候选栏保留——用户可继续改点其他候选，直到下一次书写
+                                // 首选已自动上屏：点选固化当前字并触发联想。
+                                // 点选即结束选择期：候选栏清空（下一轮书写重新填充）
                                 handwritingActiveLen = 0
                                 callbacks.onHandwritingFinalize?.invoke()
+                                handwritingCandidates = emptyList()
+                                handwritingComments = emptyList()
                                 handwritingClearSignal++
                             } else {
                                 // 替换最后上屏的字为点选候选（停顿定型后仍可替换）。
-                                // 候选栏保留供继续改选，笔画清空
+                                // 点选即结束选择期：候选栏清空，笔画清空
                                 val ch = handwritingCandidates[index]
                                 val newTail = handwritingTail.dropLast(handwritingLastSegLen) + ch
                                 val ok = callbacks.onHandwritingAutoCommit?.invoke(newTail, handwritingTail) ?: false
@@ -490,6 +534,8 @@ fun KeyboardView(
                                 handwritingActiveLen = 0
                                 handwritingLastSegLen = ch.length
                                 callbacks.onHandwritingFinalize?.invoke()
+                                handwritingCandidates = emptyList()
+                                handwritingComments = emptyList()
                                 handwritingClearSignal++
                             }
                         } else {
@@ -802,6 +848,8 @@ fun KeyboardView(
                                     "symbol" -> viewModel.enterPanel(PanelType.COMMON_SYMBOL)
                                     "number" -> viewModel.enterPanel(PanelType.NUMBER)
                                     "ime_switch" -> {
+                                        // 离开手写页即卸载手写模型（回到手写页时布局重建重载）
+                                        com.kingzcheung.xime.handwriting.HandwritingEngine.release()
                                         viewModel.switchMain(MainType.FULL)
                                         callbacks.onKeyPress("ime_switch", false)
                                     }
@@ -929,6 +977,8 @@ fun KeyboardView(
                         shadowElevation = kbShadow.elevation.dp,
                         shadowShapeRadius = kbShadow.shapeRadius.dp,
                         keyCornerRadius = kbKey.cornerRadius.dp,
+                        keySpacingX = kbKey.spacingFor("number").first?.dp,
+                        keySpacingY = kbKey.spacingFor("number").second?.dp,
                         onKeyPressDown = callbacks.onKeyPressDown,
                         isFloatingMode = state.isFloatingMode,
                         specialKeyTextColor = specialKeyTextColor,
@@ -966,6 +1016,8 @@ fun KeyboardView(
                         shadowElevation = kbShadow.elevation.dp,
                         shadowShapeRadius = kbShadow.shapeRadius.dp,
                         keyCornerRadius = kbKey.cornerRadius.dp,
+                        keySpacingX = kbKey.spacingFor("symbol").first?.dp,
+                        keySpacingY = kbKey.spacingFor("symbol").second?.dp,
                         onKeyPressDown = callbacks.onKeyPressDown,
                         isFloatingMode = state.isFloatingMode,
                         specialKeyTextColor = specialKeyTextColor,
@@ -1018,6 +1070,65 @@ fun KeyboardView(
             }
         }
 
+        // 长按候选删除自造词：键盘视图内确认覆盖层（同窗口不夺焦点，
+        // 避免焦点型弹窗导致 IME 被系统收起）；确认后经服务层调用标准
+        // C API delete_candidate_on_current_page，刷新后词条从候选消失。
+        deletePendingIndex?.let { deleteIndex ->
+            val deleteWord = candidateState.value.candidates.getOrNull(deleteIndex).orEmpty()
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { deletePendingIndex = null },
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.widthIn(max = 300.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                        Text(
+                            text = "删除自造词",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "将「$deleteWord」从用户词典中移除？",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = {
+                                onHapticFeedback?.invoke()
+                                deletePendingIndex = null
+                            }) {
+                                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            TextButton(onClick = {
+                                onHapticFeedback?.invoke()
+                                deletePendingIndex = null
+                                callbacks.onCandidateDelete?.invoke(deleteIndex)
+                            }) {
+                                Text("删除", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (page is KeyboardPage.Overlay) {
             Box(
                 modifier = Modifier
@@ -1042,20 +1153,20 @@ fun KeyboardView(
                             schemaSwitches = state.schemaSwitches,
                         ),
                         callbacks = MenuBarCallbacks(
-                            onDismiss = { viewModel.closeOverlay() },
-                            onClipboard = { viewModel.showOverlay(OverlayRoute.Clipboard(0)); callbacks.onClipboard?.invoke() },
-                            onQuickSend = { viewModel.showOverlay(OverlayRoute.Clipboard(1)); callbacks.onQuickSend?.invoke() },
-                            onKeyboardResize = { callbacks.onKeyboardResize?.invoke(); viewModel.closeOverlay() },
-                            onEmoji = { viewModel.showOverlay(OverlayRoute.Emoji) },
-                            onReloadConfig = { callbacks.onReloadConfig?.invoke(); viewModel.closeOverlay() },
-                            onSettings = { callbacks.onSettings?.invoke(); viewModel.closeOverlay() },
-                            onSchemaList = { viewModel.pushOverlay(OverlayRoute.SchemaList) },
-                            onToggleDarkMode = { callbacks.onToggleDarkMode?.invoke() },
-                            onToolbarCustomize = { viewModel.showOverlay(OverlayRoute.ToolbarCustomize) },
-                            onPermissionManager = { viewModel.showOverlay(OverlayRoute.PermissionManager) },
-                            onShuangpinReference = { viewModel.showOverlay(OverlayRoute.ShuangpinReference) },
-                            onFloatingModeToggle = { callbacks.onFloatingModeChange?.invoke(!state.isFloatingMode); viewModel.closeOverlay() },
-                            onToggleSchemaSwitch = { sw -> callbacks.onToggleSchemaSwitch?.invoke(sw); viewModel.closeOverlay() },
+                            onDismiss = { onHapticFeedback?.invoke(); viewModel.closeOverlay() },
+                            onClipboard = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.Clipboard(0)); callbacks.onClipboard?.invoke() },
+                            onQuickSend = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.Clipboard(1)); callbacks.onQuickSend?.invoke() },
+                            onKeyboardResize = { onHapticFeedback?.invoke(); callbacks.onKeyboardResize?.invoke(); viewModel.closeOverlay() },
+                            onEmoji = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.Emoji) },
+                            onReloadConfig = { onHapticFeedback?.invoke(); callbacks.onReloadConfig?.invoke(); viewModel.closeOverlay() },
+                            onSettings = { onHapticFeedback?.invoke(); callbacks.onSettings?.invoke(); viewModel.closeOverlay() },
+                            onSchemaList = { onHapticFeedback?.invoke(); viewModel.pushOverlay(OverlayRoute.SchemaList) },
+                            onToggleDarkMode = { onHapticFeedback?.invoke(); callbacks.onToggleDarkMode?.invoke() },
+                            onToolbarCustomize = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.ToolbarCustomize) },
+                            onPermissionManager = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.PermissionManager) },
+                            onShuangpinReference = { onHapticFeedback?.invoke(); viewModel.showOverlay(OverlayRoute.ShuangpinReference) },
+                            onFloatingModeToggle = { onHapticFeedback?.invoke(); callbacks.onFloatingModeChange?.invoke(!state.isFloatingMode); viewModel.closeOverlay() },
+                            onToggleSchemaSwitch = { sw -> onHapticFeedback?.invoke(); callbacks.onToggleSchemaSwitch?.invoke(sw); viewModel.closeOverlay() },
                         ),
                         modifier = Modifier.fillMaxWidth().fillMaxHeight()
                     )
@@ -1094,9 +1205,9 @@ fun KeyboardView(
                             viewModel.closeOverlay()
                             callbacks.onShowQuickSendForm?.invoke()
                         },
-                        onQuickSendEditItem = { id, text ->
+                        onQuickSendEditItem = { id, text, code ->
                             viewModel.closeOverlay()
-                            callbacks.onQuickSendEditItem?.invoke(id, text)
+                            callbacks.onQuickSendEditItem?.invoke(id, text, code)
                         },
                         onPullRemote = callbacks.onClipboardPullRemote,
                         pullRemoteAvailable = state.clipboardSyncEnabled,
@@ -1148,11 +1259,16 @@ fun KeyboardView(
                             accentColor = accentColor,
                             keyBgColor = keyBgColor,
                             bottomPaddingDp = state.keyboardBottomPaddingDp,
+                            keyCornerRadius = kbKey.cornerRadius.dp,
+                            shadowEnabled = kbShadow.enabled,
+                            shadowElevation = kbShadow.elevation.dp,
+                            shadowShapeRadius = kbShadow.shapeRadius.dp,
                             modifier = Modifier.fillMaxWidth().fillMaxHeight()
                         )
                     }
                     is OverlayRoute.Emoji -> EmojiKeyboardLayout(
                         onEmojiSelect = { emoji ->
+                            onHapticFeedback?.invoke()
                             if (emoji == "delete") {
                                 callbacks.onKeyPress("delete", false)
                             } else {
@@ -1165,10 +1281,12 @@ fun KeyboardView(
                         textColor = keyTextColor,
                         accentColor = accentColor,
                         bottomPaddingDp = state.keyboardBottomPaddingDp,
-                        modifier = Modifier.fillMaxWidth().fillMaxHeight()
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                        onHapticFeedback = onHapticFeedback,
                     )
                     is OverlayRoute.Symbol -> SymbolKeyboardLayout(
                         onSelect = { symbol ->
+                            onHapticFeedback?.invoke()
                             if (symbol == "delete") {
                                 callbacks.onKeyPress("delete", false)
                             } else {
@@ -1181,7 +1299,8 @@ fun KeyboardView(
                         accentColor = accentColor,
                         keyBgColor = keyBgColor,
                         bottomPaddingDp = state.keyboardBottomPaddingDp,
-                        modifier = Modifier.fillMaxWidth().fillMaxHeight()
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                        onHapticFeedback = onHapticFeedback,
                     )
                     is OverlayRoute.CandidatePage -> CandidatePage(
                         state = CandidatePageState(
@@ -1203,8 +1322,8 @@ fun KeyboardView(
                                 callbacks.onAssociationSelect?.invoke(index)
                                 viewModel.closeOverlay()
                             },
-                            onPageDown = callbacks.onPageDown,
-                            onPageUp = callbacks.onPageUp,
+                            onPageDown = { onHapticFeedback?.invoke(); callbacks.onPageDown?.invoke() },
+                            onPageUp = { onHapticFeedback?.invoke(); callbacks.onPageUp?.invoke() },
                             onBack = { viewModel.closeOverlay() },
                         ),
                         modifier = Modifier.fillMaxWidth().fillMaxHeight()

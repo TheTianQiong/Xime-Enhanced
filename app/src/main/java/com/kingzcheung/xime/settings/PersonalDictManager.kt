@@ -294,7 +294,7 @@ object PersonalDictManager {
     /** 旧版文件名映射（兼容性），新文件不存在时用于兜底读取。 */
     private fun legacyPackFile(rimeDir: File, schemaId: String): File? {
         val oldName = when (schemaId) {
-            "pinyin_simp", "t9_pinyin" -> "user_simp_pinyin"
+            "pinyin_simp", "t9_pinyin", "pinyin_14jian", "pinyin_17jian", "pinyin_18jian" -> "user_simp_pinyin"
             "wubi86", "wubi86_pinyin" -> "user_simp_wubi"
             else -> return null
         }

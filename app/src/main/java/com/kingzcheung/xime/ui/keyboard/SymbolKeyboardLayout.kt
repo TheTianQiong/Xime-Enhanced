@@ -1,7 +1,6 @@
 package com.kingzcheung.xime.ui.keyboard
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -57,7 +56,9 @@ fun SymbolKeyboardLayout(
     accentColor: Color,
     keyBgColor: Color,
     bottomPaddingDp: Int = 0,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 分类 tab 切换与返回按钮的振动钩子（符号点击/删除经 onSelect 由调用方统一振动）。 */
+    onHapticFeedback: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // 最近使用（LRU）：作为第一个分类页，点击符号时置顶记录
@@ -101,7 +102,10 @@ fun SymbolKeyboardLayout(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(iconButtonContainer)
-                    .clickable { onBack() },
+                    .tolerantClick {
+                        onHapticFeedback?.invoke()
+                        onBack()
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -193,7 +197,10 @@ fun SymbolKeyboardLayout(
                     SymbolCategoryTab(
                         name = category.name,
                         isSelected = index == pagerState.currentPage,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        onClick = {
+                            onHapticFeedback?.invoke()
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
                         backgroundColor = backgroundColor,
                         textColor = textColor,
                         selectedBackgroundColor = accentColor
@@ -234,9 +241,9 @@ private fun SymbolButton(
                 if (isPressed) androidx.compose.ui.graphics.lerp(backgroundColor, Color.Black, 0.2f)
                 else backgroundColor
             )
-            .clickable(
+            .tolerantClick(
+                showRipple = false,
                 interactionSource = interactionSource,
-                indication = null,
                 onClick = onClick
             ),
         contentAlignment = Alignment.Center
@@ -246,6 +253,7 @@ private fun SymbolButton(
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
             color = textColor,
+            fontFamily = AppFonts.keyFontFamily
         )
     }
 }
@@ -268,7 +276,7 @@ private fun SymbolCategoryTab(
                 if (isSelected) selectedBackgroundColor
                 else backgroundColor
             )
-            .clickable(onClick = onClick)
+            .tolerantClick(onClick = onClick)
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center
     ) {

@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.rime
 
+import com.kingzcheung.xime.util.FileLogger
 import android.content.Context
 import android.util.Log
 import com.kingzcheung.xime.BuildConfig
@@ -19,6 +20,9 @@ import java.io.IOException
 object RimeConfigHelper {
     private const val TAG = "RimeConfigHelper"
     private const val ASSETS_RIME_DIR = "rime"
+    /** app 固定的 default.custom.yaml 模板（assets 根，与 xime.yaml 并列，不随 submodule 分发）。 */
+    private const val ASSETS_DEFAULT_CUSTOM = "default.custom.yaml"
+    private const val BUFFER_SIZE = 8192
 
     /** 市场索引中随 app 发布的内置默认方案集条目 id（见 rimes/index.yaml 的 `builtin`）。 */
     private const val BUILTIN_MARKET_ID = "builtin"
@@ -48,7 +52,7 @@ object RimeConfigHelper {
         PersonalDictManager.ensureSchemaPacks(context)
         // 不再在初始化阶段删 build：build 是否重建统一由 ensureDeployment()
         // 按增量优先策略决定，避免配置变化即全量重编译（60MB 词库持锁 30s+）。
-        
+
         return Pair(rimeDir.absolutePath, rimeDir.absolutePath)
     }
 
@@ -81,7 +85,7 @@ object RimeConfigHelper {
                 if (engine.deployIncremental()) {
                     deployed = true
                 } else {
-                    Log.w(TAG, "Incremental maintenance failed, falling back to full deploy")
+                    FileLogger.w(TAG, "Incremental maintenance failed, falling back to full deploy")
                     buildDir.deleteRecursively()
                     buildDir.mkdirs()
                     deployed = engine.deploy()
@@ -125,6 +129,39 @@ object RimeConfigHelper {
         }
     }
 
+    /**
+     * 部署产物完整性检查（半成品检测）：librime 的 table/prism 产物文件头是固定
+     * magic（"Rime::Table/" / "Rime::Prism/"，Metadata.format 位于文件偏移 0）。
+     * 部署进行中进程被杀会留下空文件或截断的半成品——其 mtime 比源文件新，
+     * librime 增量维护会视为"已是最新"而跳过重编，导致该方案查询永远零命中
+     * （症状：九键方案切换正常、按键进 buffer，但候选恒空、候选栏恒 IDLE）。
+     */
+    internal fun isBrokenBuildArtifact(file: File): Boolean {
+        val expectedMagic = when {
+            file.name.endsWith(".prism.bin") -> "Rime::Prism/"
+            file.name.endsWith(".table.bin") -> "Rime::Table/"
+            // 未知类型（如 reverse.bin、日志）不判损坏，避免误删触发部署循环
+            else -> return false
+        }
+        if (!file.isFile || file.length() == 0L) return true
+        if (file.length() < expectedMagic.length) return true
+        return try {
+            java.io.FileInputStream(file).use { input ->
+                val head = ByteArray(expectedMagic.length)
+                var read = 0
+                while (read < head.size) {
+                    val n = input.read(head, read, head.size - read)
+                    if (n < 0) return true
+                    read += n
+                }
+                !String(head, Charsets.US_ASCII).startsWith(expectedMagic)
+            }
+        } catch (_: IOException) {
+            // 读不了不臆断损坏，交由 librime 运行时自检兜底
+            false
+        }
+    }
+
     fun isDeploymentComplete(context: Context): Boolean {
         val rimeDir = File(context.filesDir, "rime")
         val buildDir = File(rimeDir, "build")
@@ -132,6 +169,20 @@ object RimeConfigHelper {
 
         val enabledSchemas = SchemaManager.getEnabledSchemas(context)
         if (enabledSchemas.isEmpty()) return false
+
+        // 损坏产物统一扫描：*.prism.bin / *.table.bin 存在但 magic 不对（部署中断
+        // 半成品）→ 删除并判定未完成。产物被删除后 librime 增量维护才会重建它；
+        // 同时清 stored hash，避免 ensureDeployment 因 hash 一致而短路跳过重建。
+        // 词典产物按 dictionary 名生成，可能与 schemaId 不同名（如 t9_pinyin 用
+        // pinyin_simp 词典），故扫描整个 build 目录而非按方案枚举。
+        buildDir.listFiles()?.forEach { artifact ->
+            if (artifact.isFile && isBrokenBuildArtifact(artifact)) {
+                artifact.delete()
+                SettingsPreferences.setDeploymentHash(context, "")
+                FileLogger.w(TAG, "Broken build artifact removed: ${artifact.name}")
+                return false
+            }
+        }
 
         for (schemaId in enabledSchemas) {
             if (!File(buildDir, "$schemaId.prism.bin").exists() &&
@@ -206,6 +257,16 @@ object RimeConfigHelper {
             fileUpdateDigest(digest, defaultYaml)
         }
 
+        // default.custom.yaml 变化（patch 基线修补/方案列表启停）也要触发重部署：
+        // librime 编译各方案时经 DefaultConfigPlugin include default 的 menu 等节，
+        // 且其 __build_info/timestamps 记录了 default.custom.yaml 的 mtime，
+        // hash 失配 → 增量维护 → 各方案配置重编 → 新 page_size 编入产物全局生效。
+        val defaultCustomYaml = File(rimeDir, "default.custom.yaml")
+        if (defaultCustomYaml.exists()) {
+            digest.update("default.custom".toByteArray())
+            fileUpdateDigest(digest, defaultCustomYaml)
+        }
+
         return digest.digest().joinToString("") { String.format("%02x", it) }
     }
 
@@ -220,18 +281,93 @@ object RimeConfigHelper {
         if (alreadyHasSchemas) {
             // 仅兜底确保 default.yaml 存在（librime 入口必需），缺失时补一份，不覆盖已有。
             ensureDefaultYaml(context, targetDir)
+            // 默认方案强制更新（维护者决策）：默认方案随 app 发布、由维护者统一
+            // 维护，升级时以 assets 为准覆盖用户目录残留（治老版本升级残留废弃
+            // 配置——如引用已废弃 t9_translator 的旧 t9_pinyin 方案导致九键零候选）。
+            // 仅覆盖 assets 清单内的文件（内容比对，不同才写），清单外的第三方
+            // 方案一律跳过不处理。覆盖后文件内容变化使部署 hash 失配，后续
+            // ensureDeployment 按增量优先策略只重编受影响方案。
+            val updated = updateBuiltinAssets(context, targetDir)
+            if (updated > 0) {
+                Log.i(TAG, "Updated $updated builtin asset file(s)")
+            }
+            syncBuiltinDefaultCustom(context, targetDir)
             return false
         }
         val copied = try {
             copyAssetsRecursively(context, ASSETS_RIME_DIR, targetDir)
         } catch (e: IOException) {
-            Log.e(TAG, "Failed to copy assets", e)
+            FileLogger.e(TAG, "Failed to copy assets", e)
             false
         }
         if (copied) {
             seedBuiltinPackageVersion(context)
         }
+        syncBuiltinDefaultCustom(context, targetDir)
         return copied
+    }
+
+    /**
+     * 把 app 固定的 assets/default.custom.yaml 同步/修补到用户 rime 目录。
+     *
+     * 背景：menu/page_size 等全局默认经 default.custom.yaml patch 进 default.yaml，
+     * 再由 librime DefaultConfigPlugin 编入每个方案的编译产物。submodule 里的同名
+     * 文件只在全新安装复制一次（*.custom.yaml 被排除出强制更新），且旧版
+     * setEnabledSchemas 启停方案时会把整文件重写成只剩 schema_list 的空壳——
+     * page_size patch 就此丢失，候选数在 5（引擎兜底）与 20（运行时内存覆盖，
+     * 重启/部署后失效）之间漂移。
+     *
+     * 规则：文件缺失 → 复制模板；已存在 → 内容对齐 app 设置值
+     * （[patchDefaultCustomContent]，.custom.yaml 可以被覆盖，不保留 PC 遗留值）。
+     * 文件变化使部署 hash 失配，由 ensureDeployment 增量重编后全局生效。
+     */
+    private fun syncBuiltinDefaultCustom(context: Context, targetDir: File) {
+        val target = File(targetDir, ASSETS_DEFAULT_CUSTOM)
+        val pageSize = SettingsPreferences.getPageSize(context).coerceAtLeast(1)
+        try {
+            if (!target.exists()) {
+                copyAssetFile(context, ASSETS_DEFAULT_CUSTOM, target)
+                // 模板基线（20）与用户设置不一致时（如 slider 调过）以设置为准
+                val aligned = patchDefaultCustomContent(target.readText(), pageSize)
+                if (aligned != null) {
+                    target.writeText(aligned)
+                }
+                return
+            }
+            val patched = patchDefaultCustomContent(target.readText(), pageSize) ?: return
+            target.writeText(patched)
+            Log.i(TAG, "Aligned ${target.name} menu/page_size=$pageSize")
+        } catch (e: IOException) {
+            FileLogger.e(TAG, "Failed to sync $ASSETS_DEFAULT_CUSTOM", e)
+        }
+    }
+
+    /**
+     * default.custom.yaml 的基线对齐（纯函数）：把 page_size 强制对齐为 app 当前
+     * 设置值。注意这只是磁盘配置基线——方案自带的 menu/page_size（内置与第三方
+     * 方案多为 PC 遗留默认 5，不适配手机）经 librime MergeTree 语义压过 default
+     * 层，运行时的实际生效靠 JNI 层 setPageSize 直接注入（rime_jni.cc）。
+     * 无需变化时返回 null。
+     */
+    internal fun patchDefaultCustomContent(text: String, pageSize: Int): String? {
+        val sep = if (text.contains("\r\n")) "\r\n" else "\n"
+        val lines = text.lines()
+        val pageSizeIdx = lines.indexOfFirst { it.trimStart().startsWith("page_size:") }
+        if (pageSizeIdx >= 0) {
+            val raw = lines[pageSizeIdx].trimStart().removePrefix("page_size:")
+                .substringBefore('#').trim()
+            if (raw.toIntOrNull() == pageSize) return null
+            val indent = lines[pageSizeIdx].takeWhile { it == ' ' || it == '\t' }
+            val updated = lines.toMutableList()
+            updated[pageSizeIdx] = "${indent}page_size: $pageSize"
+            return updated.joinToString(sep)
+        }
+        val patchIdx = lines.indexOfFirst { it.trim() == "patch:" }
+        if (patchIdx < 0) return null
+        val updated = lines.toMutableList()
+        updated.add(patchIdx + 1, "  menu:")
+        updated.add(patchIdx + 2, "    page_size: $pageSize")
+        return updated.joinToString(sep)
     }
 
     /**
@@ -257,6 +393,68 @@ object RimeConfigHelper {
         copyAssetFile(context, "$ASSETS_RIME_DIR/default.yaml", defaultYaml)
     }
     
+    /**
+     * 默认方案强制更新：递归遍历 assets 内置清单，对 .yaml/.lua 文件做内容比对，
+     * 缺失或内容不同才覆盖。assets 清单之外的第三方文件不受影响。
+     *
+     * 覆盖 default.yaml 会重置 schema_list，由调用方
+     * [SchemaManager.applyEnabledSchemasToDefaultYaml] 紧随其后恢复用户启用列表。
+     *
+     * @return 覆盖（含新增）的文件数。
+     */
+    private fun updateBuiltinAssets(context: Context, targetDir: File): Int {
+        var updated = 0
+        fun sync(assetSub: String, targetSub: File) {
+            val assetPath = if (assetSub.isEmpty()) ASSETS_RIME_DIR else "$ASSETS_RIME_DIR/$assetSub"
+            for (fileName in context.assets.list(assetPath) ?: return) {
+                val childAsset = if (assetSub.isEmpty()) fileName else "$assetSub/$fileName"
+                val childTarget = File(targetSub, fileName)
+                val subFiles = context.assets.list("$ASSETS_RIME_DIR/$childAsset")
+                if (!subFiles.isNullOrEmpty()) {
+                    childTarget.mkdirs()
+                    sync(childAsset, childTarget)
+                } else if (fileName.endsWith(".yaml") || fileName.endsWith(".lua")) {
+                    // *.custom.yaml 是补丁层文件（用户定制 + app 运行时写入：
+                    // setEnabledSchemas 的启用列表、DoEnsureT9SchemaPatches 的
+                    // T9 注入与个人词库 packs），覆盖会抹掉用户配置与第三方方案——
+                    // 一律排除出默认覆盖范围
+                    if (fileName.endsWith(".custom.yaml")) continue
+                    if (!childTarget.exists() || !assetContentEquals(context, "$ASSETS_RIME_DIR/$childAsset", childTarget)) {
+                        copyAssetFile(context, "$ASSETS_RIME_DIR/$childAsset", childTarget)
+                        updated++
+                    }
+                }
+            }
+        }
+        sync("", targetDir)
+        return updated
+    }
+
+    /** assets 文件与本地文件内容逐块比对（流式，避免大词典整读进内存）。 */
+    private fun assetContentEquals(context: Context, assetPath: String, target: File): Boolean {
+        return try {
+            context.assets.open(assetPath).use { assetStream ->
+                java.io.FileInputStream(target).use { fileStream ->
+                    val assetBuf = ByteArray(BUFFER_SIZE)
+                    val fileBuf = ByteArray(BUFFER_SIZE)
+                    while (true) {
+                        val nAsset = assetStream.read(assetBuf)
+                        val nFile = fileStream.read(fileBuf)
+                        if (nAsset != nFile) return false
+                        if (nAsset < 0) return true
+                        for (i in 0 until nAsset) {
+                            if (assetBuf[i] != fileBuf[i]) return false
+                        }
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    true
+                }
+            }
+        } catch (_: IOException) {
+            false
+        }
+    }
+
     private fun copyAssetsRecursively(context: Context, assetPath: String, targetDir: File): Boolean {
         val files = context.assets.list(assetPath)
         
@@ -296,7 +494,7 @@ object RimeConfigHelper {
                     }
                 }
             } catch (e: IOException) {
-                Log.e(TAG, "Failed to process: $fullAssetPath", e)
+                FileLogger.e(TAG, "Failed to process: $fullAssetPath", e)
             }
         }
         
@@ -316,7 +514,7 @@ object RimeConfigHelper {
                 }
             }
         } catch (e: IOException) {
-            Log.e(TAG, "Failed to copy: $assetPath", e)
+            FileLogger.e(TAG, "Failed to copy: $assetPath", e)
         }
     }
 
@@ -368,7 +566,7 @@ object RimeConfigHelper {
             if (oldMarket.renameTo(newMarket)) {
                 Log.i(TAG, "Migrated rime/market/ -> market/")
             } else {
-                Log.w(TAG, "Failed to rename rime/market/ to market/")
+                FileLogger.w(TAG, "Failed to rename rime/market/ to market/")
             }
         } else {
             // 新位置已存在，逐项合并

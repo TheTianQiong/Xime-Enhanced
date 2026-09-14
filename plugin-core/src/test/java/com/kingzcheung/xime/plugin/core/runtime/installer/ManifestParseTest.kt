@@ -100,6 +100,24 @@ class ManifestParseTest {
     }
 
     @Test
+    fun `capabilities 的 snake_case 键应解析为 clipboardSync protocols`() {
+        // 回归：clipboardSync 缺 SerialName("clipboard_sync") 时 kaml 静默忽略该键，
+        // 宿主因 protocols 为空拒绝启动剪贴板同步插件
+        val content = """
+            id: sync
+            type: clipboard_sync
+            capabilities:
+              clipboard_sync:
+                protocols:
+                  - webdav
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+        val protocols = config.capabilities?.clipboardSync?.protocols
+        assertEquals(listOf("webdav"), protocols)
+    }
+
+    @Test
     fun `插件 id 支持反域名命名空间`() {
         assertTrue("反域名 id 应合法", InstallerManager.isValidPluginId("com.kingzcheung.xime.plugin.funasr_asr"))
         assertTrue("下划线/连字符 id 应合法", InstallerManager.isValidPluginId("webdav-clipboard_sync"))

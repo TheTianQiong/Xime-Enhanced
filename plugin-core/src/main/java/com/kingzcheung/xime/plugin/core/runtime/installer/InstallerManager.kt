@@ -75,9 +75,21 @@ internal data class CapabilitiesConfig(
     val emoji: EmojiCapabilitiesConfig? = null,
     val speech: SpeechCapabilitiesConfig? = null,
     val tool: ToolCapabilitiesConfig? = null,
+    @kotlinx.serialization.SerialName("clipboard_sync")
     val clipboardSync: ClipboardSyncCapabilitiesConfig? = null,
+    @kotlinx.serialization.SerialName("backup")
+    val backup: BackupCapabilitiesConfig? = null,
     /** 下行事件订阅（如 "input_changed"），小写 snake_case。 */
-    val events: List<String> = emptyList()
+    val events: List<String> = emptyList(),
+    /** 候选词变换能力（hotPath，硬超时 15ms）。 */
+    @kotlinx.serialization.SerialName("candidate_transform")
+    val candidateTransform: Boolean = false,
+    /** 快捷发送只读能力（注入 host.quickSend）。 */
+    @kotlinx.serialization.SerialName("quick_send_read")
+    val quickSendRead: Boolean = false,
+    /** 剪贴板只读能力（注入 host.clipboard）。 */
+    @kotlinx.serialization.SerialName("clipboard_read")
+    val clipboardRead: Boolean = false
 )
 
 @Serializable
@@ -101,6 +113,11 @@ internal data class ToolCapabilitiesConfig(
 
 @Serializable
 internal data class ClipboardSyncCapabilitiesConfig(
+    val protocols: List<String> = emptyList()
+)
+
+@Serializable
+internal data class BackupCapabilitiesConfig(
     val protocols: List<String> = emptyList()
 )
 
@@ -137,7 +154,15 @@ private fun CapabilitiesConfig.toModel(): com.kingzcheung.xime.plugin.core.model
                 protocols = it.protocols.filter { p -> p.isNotBlank() }
             )
         },
-        events = events.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+        backup = backup?.let {
+            com.kingzcheung.xime.plugin.core.model.PluginCapabilities.BackupCapabilities(
+                protocols = it.protocols.filter { p -> p.isNotBlank() }
+            )
+        },
+        events = events.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct(),
+        candidateTransform = candidateTransform,
+        quickSendRead = quickSendRead,
+        clipboardRead = clipboardRead
     )
 }
 

@@ -42,7 +42,3 @@ capabilities:
     supportsSearch: true   # 支持按文本搜索表情
     columns: 3             # 表情网格列数（布局元数据，插件不再运行时声明）
     itemHeightDp: 30
-
-# 配置字段声明（宿主直接渲染表单，无需先执行脚本）
-# 类型：text | secret | select | multi_select | switch | number
-configSchema: []

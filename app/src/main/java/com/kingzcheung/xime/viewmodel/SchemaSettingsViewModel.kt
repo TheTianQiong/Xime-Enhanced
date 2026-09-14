@@ -92,6 +92,7 @@ class SchemaSettingsViewModel(application: Application) : AndroidViewModel(appli
 
     fun selectSchema(schema: SchemaMeta) {
         if (_uiState.value.currentSchema == schema.schemaId) return
+        val previous = _uiState.value.currentSchema
         SettingsPreferences.setCurrentSchema(context, schema.schemaId)
         _uiState.update { it.copy(currentSchema = schema.schemaId) }
         if (RimeEngine.isInitialized()) {
@@ -102,12 +103,24 @@ class SchemaSettingsViewModel(application: Application) : AndroidViewModel(appli
                 if (switched) {
                     showToast("已切换到${schema.name}")
                 } else {
+                    rollbackSchemaSelection(previous)
                     showToast("词库部署中，请稍后再切换方案")
                 }
             } else {
+                rollbackSchemaSelection(previous)
                 showToast("请点击「部署」按钮")
             }
         }
+    }
+
+    /**
+     * 切换失败时回滚偏好与 UI 状态。不回滚有两个后果：再次点击会被
+     * [selectSchema] 开头的同值短路拦住（用户永远无法重试）；偏好与
+     * 引擎实际方案脱节后，IME 重启的方案恢复逻辑会拿到偏差好。
+     */
+    private fun rollbackSchemaSelection(previous: String) {
+        SettingsPreferences.setCurrentSchema(context, previous)
+        _uiState.update { it.copy(currentSchema = previous) }
     }
 
     fun importSchemaFile(uri: Uri) {

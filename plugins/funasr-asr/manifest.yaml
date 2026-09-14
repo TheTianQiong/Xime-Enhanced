@@ -33,11 +33,3 @@ capabilities:
 network:
   hosts:
     - dashscope.aliyuncs.com
-
-# 配置字段声明（插件中心直接渲染表单）
-configSchema:
-  - key: apiKey
-    label: API Key
-    type: secret
-    placeholder: 输入阿里百炼 API Key
-    helpText: 访问阿里云百炼平台获取 API Key

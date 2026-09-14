@@ -10,7 +10,13 @@
   <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
+[<img src="https://f-droid.org/badge/get-it-on.png"
+    alt="Get it on F-Droid"
+    height="80">](https://f-droid.org/packages/com.kingzcheung.xime)
+
+
 [Xime 輸入法 (Windows 版)](https://github.com/ximeiorg/winxime) | [Xime 輸入法 (Linux 版)](https://github.com/ximeiorg/xime-wayland) | [聯想詞預測模型](https://github.com/ximeiorg/predictive-text) | [手寫輸入法模型](https://github.com/ximeiorg/ochwpro)
+
 
 一款基於 <a href="https://rime.im/">Rime</a> 引擎構建的 Android 五筆/拼音輸入法，專注於簡潔高效的中文輸入體驗。
 
@@ -138,6 +144,11 @@
 
 詳細使用說明請檢視 [使用文件](https://ime.ximei.me)。
 
+- [常見問題 FAQ](https://ime.ximei.me/faq.html)
+- [Rime 方案列表](https://ime.ximei.me/rime-list.html)
+- [外掛列表](https://ime.ximei.me/plugin-list.html)
+- [AI 模型列表](https://ime.ximei.me/model-list.html)
+
 ## 構建
 
 ```bash
@@ -150,25 +161,6 @@ git submodule update --init --recursive
 # 構建 Release APK
 ./gradlew assembleRelease
 ```
-
-### AI 模型下載
-
-#### 智慧聯想詞模型
-
-- **專案地址**: https://github.com/ximeiorg/predictive-text
-- **模型下載**: https://www.modelscope.cn/models/bikeand/predictive-text-small
-- **模型檔案**: `model_int8_dynamic.onnx`（約 17MB）
-- **詞表檔案**: `vocab.json`
-- **存放位置**: `filesDir/` 目錄（即應用私有目錄根目錄）
-- **功能**: 基於 Transformer 的中文聯想詞預測，提供智慧候選詞推薦
-
-#### 語音辨識模型
-
-- **模型下載**: https://www.modelscope.cn/models/bikeand/asr
-- **模型檔案**: `sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2`（約 132MB）
-- **功能**: 串流 zipformer2 中文語音辨識（本地離線執行）
-
-**注意**: 所有模型均可直接在應用程式內「設定 > 智慧聯想/語音辨識」頁面下載，無需手動放置。
 
 ## 技術棧
 
@@ -197,3 +189,7 @@ git submodule update --init --recursive
 ## 授權條款
 
 GPLv3 License
+
+Copyright © 2026 Kingz Cheung
+
+"Xime" 名稱、Logo 及其他品牌資產**不屬於** GPLv3 開源授權範圍，詳見 [TRADEMARKS.md](TRADEMARKS.md)。

@@ -14,7 +14,7 @@ enum class ToolResult {
     /**
      * 纯展示面板（InfoPanel）：无输入框、无生成动作（enter 不触发 generate）、
      * 点击节点不上屏。插件通过 [ToolPanelState.ui] 声明式描述内容
-     * （白名单节点：section/text/metric/divider/action）；
+     * （统一 [com.kingzcheung.xime.plugin.core.config.UiNode] 白名单节点）；
      * 多条候选通过 [ToolPanelState.items] 返回，宿主渲染为点击上屏条目
      * （替代原 SELECT 全屏结果页，如 AI 智能回复）。
      */
@@ -30,11 +30,11 @@ data class ToolPanelState(
     /** 是否正在生成中（SSE 流式期间为 true，宿主据此展示 loading 并轮询刷新）。 */
     val loading: Boolean = false,
     /**
-     * passive 纯展示节点树（声明式 UI）。每节点 = { type: String, ...字段 }，
-     * 白名单 type：section(title) / text(content, style) / metric(label, value, unit?) /
-     * divider / action(label, actionId)。未知 type 宿主降级为文本渲染，不崩溃。
+     * passive 纯展示节点树（声明式 UI，统一模型 [com.kingzcheung.xime.plugin.core.config.UiNode]）。
+     * 面板展示白名单：SECTION / TEXT / METRIC / DIVIDER / BUTTON；
+     * 未知类型节点由解析层丢弃，渲染层降级为文本兜底。
      */
-    val ui: List<Map<*, *>>? = null,
+    val ui: List<com.kingzcheung.xime.plugin.core.config.UiNode>? = null,
 )
 
 /**
@@ -51,9 +51,11 @@ data class ToolPanelState(
  * - `loading`（布尔）：生成期间为 true，宿主据此轮询刷新直至 false。
  * - `inputText`（字符串，可选）：面板输入框内容回显，缺省回退为宿主传入的输入。
  * - `ui`（数组，可选）：纯展示节点树，仅 `display: passive` 时由宿主渲染（InfoPanel）。
- *   节点 = `{ type: string, ...字段 }`，白名单：
- *   `section(title)` / `text(content, style?)` / `metric(label, value, unit?)` /
- *   `divider` / `action(label, actionId)`；未知 type 降级为文本，不崩溃。
+ *   节点 = 统一 [com.kingzcheung.xime.plugin.core.config.UiNode] 结构
+ *   `{ type: string, key?, label?, value?, options?, ... }`，面板展示白名单：
+ *   `section(label)` / `text(value, style?)` / `metric(label, value, unit?)` /
+ *   `divider` / `button(key, label)`；未知 type 由解析层丢弃。
+ *   旧字段名（title/content/actionId、action→button）解析层兼容。
  *
  * 传输方式（同步 HTTP / SSE 流式）与结果呈现由插件元数据声明，宿主只消费上述结构化数据。
  *

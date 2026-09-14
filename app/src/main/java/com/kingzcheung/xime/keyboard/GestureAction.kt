@@ -37,6 +37,13 @@ interface ActionExecutor {
 
     /** 重复上一次输入。 */
     fun repeatLastInput()
+
+    /**
+     * 派发功能键语义进服务层按键路由（ImeKeyRouter），复用其全部既有状态机
+     * （组合态提交、候选选择、退格合并、T9 partial 等均在路由内处理）。
+     * @param key 功能键字符串，如 "enter"、"space"、"delete"、"clear_all"
+     */
+    fun dispatchKey(key: String)
 }
 
 /**
@@ -131,18 +138,55 @@ enum class GestureAction(val value: String) {
     },
 
     /** 切换中/英文输入模式。
-     *  由 KeyboardView 拦截处理，发送 "ime_switch" 指令到服务层。 */
+     *  UI 分发层优先处理（附带 resetShift 与 ascii 状态参数）；此处为兜底路径。 */
     TOGGLE_ASCII("toggle_ascii") {
-        override fun execute(context: ActionExecutor, value: String) { /* no-op, handled at UI layer */ }
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("ime_switch")
+        }
     },
 
-    /** 删除/退格。由 UI 层拦截处理，调用 onKeyPress("delete")。 */
+    /** 删除/退格。UI 分发层优先处理；此处为兜底路径（复用退格合并状态机）。 */
     DELETE("delete") {
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("delete")
+        }
+    },
+
+    /** 切换符号键盘。纯 UI 层行为（KeyboardView 内部切换），ActionExecutor 层 no-op。 */
+    TOGGLE_SYMBOLS("toggle_symbols") {
         override fun execute(context: ActionExecutor, value: String) { /* no-op, handled at UI layer */ }
     },
 
-    /** 切换符号键盘。由 UI 层拦截处理。 */
-    TOGGLE_SYMBOLS("toggle_symbols") {
+    /** 回车键语义（组合态提交编码 / 空闲态编辑器动作），复用服务层回车状态机。 */
+    ENTER("enter") {
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("enter")
+        }
+    },
+
+    /** 空格键语义（组合态选首候选 / 空闲态上屏空格），复用服务层空格状态机。 */
+    SPACE("space") {
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("space")
+        }
+    },
+
+    /** 上滑清空：输入态清输入态 / 空闲态清空全部已上屏（记录撤回），复用服务层逻辑。 */
+    CLEAR_ALL("clear_all") {
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("clear_all")
+        }
+    },
+
+    /** 下滑撤回：恢复最近一次 clear_all 清空的内容，仅空闲态有效。 */
+    UNDO_CLEAR("undo_clear") {
+        override fun execute(context: ActionExecutor, value: String) {
+            context.dispatchKey("undo_clear")
+        }
+    },
+
+    /** 切换大小写状态。纯 UI 层行为（KeyboardViewModel.toggleShift），ActionExecutor 层 no-op。 */
+    TOGGLE_SHIFT("toggle_shift") {
         override fun execute(context: ActionExecutor, value: String) { /* no-op, handled at UI layer */ }
     };
 

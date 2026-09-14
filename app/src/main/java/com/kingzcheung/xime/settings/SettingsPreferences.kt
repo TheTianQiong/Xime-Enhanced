@@ -10,6 +10,7 @@ object SettingsPreferences {
     /** 双写标记：仅新版本双写后置 true，本地值才可信（旧版本只写 rime，本地是过时迁移值） */
     private const val KEY_CURRENT_SCHEMA_DUAL = "current_schema_dual"
     private const val KEY_DEPLOYMENT_DONE = "deployment_done"
+    private const val KEY_BUILTIN_SCHEMAS_MERGED = "builtin_schemas_merged"
     private const val KEY_DEPLOYMENT_HASH = "deployment_hash"
     private const val KEY_RIME_ASSETS_VERSION = "rime_assets_version"
     private const val KEY_SETUP_COMPLETED = "setup_completed"
@@ -31,6 +32,7 @@ object SettingsPreferences {
     const val KEY_STT_ENABLED = "stt_enabled"
     const val KEY_STT_ONLINE_PLUGIN_ID = "stt_online_plugin_id"
     const val KEY_STT_USE_LOCAL = "stt_use_local"
+    const val KEY_STT_KEEP_ENGINE_ALIVE = "stt_keep_engine_alive"
     const val KEY_STT_DEBUG_RECORD = "stt_debug_record"
     
     /** 默认主题 ID，可从 xime.yaml 的 style.color_scheme 初始化。 */
@@ -54,13 +56,25 @@ object SettingsPreferences {
     fun setModeChangeTargetIsNumber(context: Context, isNumber: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_MODE_CHANGE_TARGET, isNumber).apply()
     }
+
+    private const val KEY_AUTO_NUMBER_KEYBOARD = "auto_number_keyboard_for_number_fields"
+
+    /** 进入纯数字输入框（号码/验证码等）时自动弹出数字键盘，默认开启。 */
+    fun isAutoNumberKeyboardEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_AUTO_NUMBER_KEYBOARD, true)
+    }
+
+    fun setAutoNumberKeyboardEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_AUTO_NUMBER_KEYBOARD, enabled).apply()
+    }
     
     private const val KEY_LAYOUT_PREFIX = "layout_pref_"
     
     private const val KEY_KEYBOARD_HEIGHT_DP = "keyboard_height_dp"
     private const val KEY_KEYBOARD_HEIGHT_DP_LANDSCAPE = "keyboard_height_dp_landscape"
     const val DEFAULT_KEYBOARD_HEIGHT_PERCENT = 35
-    const val DEFAULT_KEYBOARD_HEIGHT_PERCENT_LANDSCAPE = 49
+    /** 横屏默认高度 = 竖屏高度（长边）× 此百分比。约等于旧值（横屏短边 × 49%），但基数稳定、与竖屏语义统一 */
+    const val DEFAULT_KEYBOARD_HEIGHT_PERCENT_LANDSCAPE = 25
 
     private const val KEY_TOOLBAR_BUTTONS = "toolbar_buttons"
     private val DEFAULT_TOOLBAR_BUTTONS = com.kingzcheung.xime.keyboard.ToolbarButton.DEFAULT_VISIBLE.joinToString(",") { it.id }
@@ -74,10 +88,6 @@ object SettingsPreferences {
         getPrefs(context).edit().putString(KEY_TOOLBAR_BUTTONS, buttons.joinToString(",")).apply()
     }
 
-    private const val KEY_WEBDAV_URL = "webdav_url"
-    private const val KEY_WEBDAV_USERNAME = "webdav_username"
-    private const val KEY_WEBDAV_PASSWORD = "webdav_password"
-    private const val KEY_WEBDAV_PATH = "webdav_path"
 
     private const val KEY_SCHEMA_IMPORT_WARNING_DISMISSED = "schema_import_warning_dismissed"
 
@@ -171,9 +181,22 @@ object SettingsPreferences {
     fun isDeploymentDone(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_DEPLOYMENT_DONE, false)
     }
-    
+
     fun setDeploymentDone(context: Context, done: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_DEPLOYMENT_DONE, done).apply()
+    }
+
+    /**
+     * 内置方案补齐已执行标记：新版本首次运行时把缺失的内置方案（如 t9_pinyin，
+     * 老版本升级用户列表里没有）补进 schema_list 一次；之后用户在方案管理里
+     * 移除内置方案是有效选择，getEnabledSchemas 不得再强行补回。
+     */
+    fun isBuiltinSchemasMerged(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_BUILTIN_SCHEMAS_MERGED, false)
+    }
+
+    fun setBuiltinSchemasMerged(context: Context, merged: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_BUILTIN_SCHEMAS_MERGED, merged).apply()
     }
 
     fun getDeploymentHash(context: Context): String {
@@ -404,6 +427,21 @@ object SettingsPreferences {
         getPrefs(context).edit().putBoolean(KEY_STT_USE_LOCAL, useLocal).apply()
     }
 
+    /**
+     * 语音结束后是否保持识别引擎常驻（不随会话结束销毁）。
+     * 开启后闲置一段时间再使用无需重新加载引擎，"开始聆听"响应快。
+     * 仅本地（离线）模式生效：模型本就常驻 :asr 进程，保留 wrapper 代价极小；
+     * 在线插件常驻需保持 WebSocket 长连接（耗电、占用服务端资源），不提供常驻。
+     */
+    fun isSttKeepEngineAlive(context: Context): Boolean {
+        return isSttUseLocal(context) &&
+            getPrefs(context).getBoolean(KEY_STT_KEEP_ENGINE_ALIVE, false)
+    }
+
+    fun setSttKeepEngineAlive(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_STT_KEEP_ENGINE_ALIVE, enabled).apply()
+    }
+
     /** 是否把语音识别期间的录音写入文件（调试用）。 */
     fun isSttDebugRecord(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_STT_DEBUG_RECORD, false)
@@ -514,8 +552,12 @@ object SettingsPreferences {
     }
 
     fun getDefaultKeyboardHeightDp(context: Context, isLandscape: Boolean = false): Int {
-        val percent = if (isLandscape) DEFAULT_KEYBOARD_HEIGHT_PERCENT_LANDSCAPE else DEFAULT_KEYBOARD_HEIGHT_PERCENT
-        return context.resources.configuration.screenHeightDp * percent / 100
+        val config = context.resources.configuration
+        if (!isLandscape) return config.screenHeightDp * DEFAULT_KEYBOARD_HEIGHT_PERCENT / 100
+        // 横屏以竖屏高度（长边）为基数：横屏短边随宽高比/系统栏波动大，
+        // 长边是设备稳定值，且与悬浮模式 fallback（portraitScreenHeightDp × 百分比）语义一致
+        val portraitHeightDp = maxOf(config.screenWidthDp, config.screenHeightDp)
+        return portraitHeightDp * DEFAULT_KEYBOARD_HEIGHT_PERCENT_LANDSCAPE / 100
     }
 
     private const val KEY_KEYBOARD_BOTTOM_PADDING_DP = "keyboard_bottom_padding_dp"
@@ -527,38 +569,6 @@ object SettingsPreferences {
 
     fun setKeyboardBottomPaddingDp(context: Context, paddingDp: Int) {
         getPrefs(context).edit().putInt(KEY_KEYBOARD_BOTTOM_PADDING_DP, paddingDp).apply()
-    }
-
-    fun getWebDavUrl(context: Context): String {
-        return getPrefs(context).getString(KEY_WEBDAV_URL, "") ?: ""
-    }
-
-    fun setWebDavUrl(context: Context, url: String) {
-        getPrefs(context).edit().putString(KEY_WEBDAV_URL, url).apply()
-    }
-
-    fun getWebDavUsername(context: Context): String {
-        return getPrefs(context).getString(KEY_WEBDAV_USERNAME, "") ?: ""
-    }
-
-    fun setWebDavUsername(context: Context, username: String) {
-        getPrefs(context).edit().putString(KEY_WEBDAV_USERNAME, username).apply()
-    }
-
-    fun getWebDavPassword(context: Context): String {
-        return getPrefs(context).getString(KEY_WEBDAV_PASSWORD, "") ?: ""
-    }
-
-    fun setWebDavPassword(context: Context, password: String) {
-        getPrefs(context).edit().putString(KEY_WEBDAV_PASSWORD, password).apply()
-    }
-
-    fun getWebDavPath(context: Context): String {
-        return getPrefs(context).getString(KEY_WEBDAV_PATH, "xime") ?: "xime"
-    }
-
-    fun setWebDavPath(context: Context, path: String) {
-        getPrefs(context).edit().putString(KEY_WEBDAV_PATH, path).apply()
     }
 
     fun isSchemaImportWarningDismissed(context: Context): Boolean {
@@ -766,5 +776,17 @@ object SettingsPreferences {
 
     fun setSmsCodeTtlSeconds(context: Context, seconds: Long) {
         getPrefs(context).edit().putLong(KEY_SMS_CODE_TTL_SECONDS, seconds.coerceIn(10L, 600L)).apply()
+    }
+
+    // ── 备份插件 ──
+
+    const val KEY_BACKUP_PLUGIN_ID = "backup_plugin_id"
+
+    fun getBackupPluginId(context: Context): String {
+        return getPrefs(context).getString(KEY_BACKUP_PLUGIN_ID, "") ?: ""
+    }
+
+    fun setBackupPluginId(context: Context, pluginId: String) {
+        getPrefs(context).edit().putString(KEY_BACKUP_PLUGIN_ID, pluginId).apply()
     }
 }

@@ -54,7 +54,7 @@ class XimeApplication : Application(), ImageLoaderFactory {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 FileLogger.e("CrashHandler", "Uncaught exception on thread: ${thread.name}", throwable)
-                FileLogger.flush()
+                FileLogger.flushNow()
             } catch (_: Exception) {
             }
             defaultHandler?.uncaughtException(thread, throwable)
@@ -79,6 +79,12 @@ class XimeApplication : Application(), ImageLoaderFactory {
         }
         PluginManager.ipcHostApiFactory = { pluginId ->
             com.kingzcheung.xime.plugin.ipc.IpcHostApiImpl(this, pluginId)
+        }
+        PluginManager.quickSendHostApiFactory = { _ ->
+            com.kingzcheung.xime.plugin.QuickSendHostApiImpl(this)
+        }
+        PluginManager.clipboardHostApiFactory = { _ ->
+            com.kingzcheung.xime.plugin.ClipboardHostApiImpl(this)
         }
         PluginManager.initialize(this) {
             if (isDebug) {

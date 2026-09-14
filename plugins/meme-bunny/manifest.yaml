@@ -28,6 +28,3 @@ capabilities:
     supportsSearch: true
     columns: 3
     itemHeightDp: 110
-
-# 配置字段（无）
-configSchema: []

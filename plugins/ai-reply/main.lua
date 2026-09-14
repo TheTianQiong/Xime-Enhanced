@@ -124,36 +124,43 @@ end
 
 -- ================= 工具面板契约 =================
 
--- ui 节点树（白名单 type：section/text/metric/divider/action）：
+-- ui 节点树（统一 UiNode 白名单 type：section/text/metric/divider/button）：
 --   未生成 → 对方消息预览 + "生成回复"按钮；失败 → 错误提示 + 重试按钮；
 --   生成中 → 空 ui（loading 字段驱动宿主显示加载态）；有候选 → 提示文字（items 由宿主渲染）
 local function buildUi()
   local ui = {}
   if #cachedItems > 0 then
-    ui[#ui + 1] = { type = "section", title = "回复候选" }
-    ui[#ui + 1] = { type = "text", content = "点击候选直接上屏", style = "caption" }
+    ui[#ui + 1] = { type = "section", label = "回复候选" }
+    ui[#ui + 1] = { type = "text", value = "点击候选直接上屏", style = "caption" }
   elseif generating then
     -- loading 态：宿主显示"加载中..."
   else
-    ui[#ui + 1] = { type = "section", title = "对方消息" }
+    ui[#ui + 1] = { type = "section", label = "对方消息" }
     if lastContext ~= "" then
-      ui[#ui + 1] = { type = "text", content = lastContext }
+      ui[#ui + 1] = { type = "text", value = lastContext }
     else
-      ui[#ui + 1] = { type = "text", content = "暂无上下文：先复制对方消息，再从工具栏打开本面板", style = "caption" }
+      ui[#ui + 1] = { type = "text", value = "暂无上下文：先复制对方消息，再从工具栏打开本面板", style = "caption" }
     end
     if lastError ~= "" then
-      ui[#ui + 1] = { type = "text", content = lastError, style = "caption" }
+      ui[#ui + 1] = { type = "text", value = lastError, style = "caption" }
     end
-    ui[#ui + 1] = { type = "action", label = lastError ~= "" and "重新生成" or "生成回复", actionId = "generate" }
+    ui[#ui + 1] = { type = "button", label = lastError ~= "" and "重新生成" or "生成回复", key = "generate" }
   end
   return ui
 end
 
 function plugin.getPanelState(inputText)
   -- openToolPanel 时宿主传入收集的上下文（选区 > 输入框 > 剪贴板）；
-  -- action 点击后的单次重拉传空串，不覆盖已有上下文
+  -- action 点击后的单次重拉传空串，不覆盖已有上下文。
+  -- 上下文变化（用户复制了新消息）→ 旧候选/错误状态失效，回到初始态
   if inputText ~= nil and trim(inputText) ~= "" then
-    lastContext = trim(inputText)
+    local ctx = trim(inputText)
+    if ctx ~= lastContext then
+      cachedItems = {}
+      lastError = ""
+      generating = false
+    end
+    lastContext = ctx
   end
   return {
     items = cachedItems,
@@ -237,7 +244,11 @@ function plugin.onPanelAction(actionId)
 end
 
 function plugin.onPanelItemClick(itemId)
-  -- 上屏由宿主完成，插件无需处理
+  -- 点选上屏即本次任务完成：重置面板状态，下次打开回到初始态
+  -- （否则旧候选残留，新复制的消息看起来"没效果"）
+  cachedItems = {}
+  lastError = ""
+  generating = false
 end
 
 return plugin

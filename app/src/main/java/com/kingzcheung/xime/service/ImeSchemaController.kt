@@ -123,7 +123,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                     applyPageSizeSetting(savedSchema)
                     service.rimeEngine.switchSchema(savedSchema)
                 } else {
-                    Log.w(XimeInputMethodService.TAG, "Schema $savedSchema not found in available schemas")
+                    FileLogger.w(XimeInputMethodService.TAG, "Schema $savedSchema not found in available schemas")
                 }
                 
                 // 直接在 key-processing 线程同步读取 name，避免嵌套协程的时序问题
@@ -141,7 +141,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                     android.widget.Toast.makeText(service, "方案部署完成", android.widget.Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Log.e(XimeInputMethodService.TAG, "Failed to reload config", e)
+                FileLogger.e(XimeInputMethodService.TAG, "Failed to reload config", e)
             }
         }
     }
@@ -162,7 +162,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             )
             service.updateUI()
         } catch (e: Exception) {
-            Log.e(XimeInputMethodService.TAG, "Failed to deploy schema", e)
+            FileLogger.e(XimeInputMethodService.TAG, "Failed to deploy schema", e)
         }
     }
     
@@ -172,7 +172,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             service.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(XimeInputMethodService.TAG, "Failed to open settings", e)
+            FileLogger.e(XimeInputMethodService.TAG, "Failed to open settings", e)
         }
     }
     
@@ -271,7 +271,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
         if (schemaId == HANDWRITING_SCHEMA_ID) {
             // 检查手写模型文件是否已下载
             if (!com.kingzcheung.xime.handwriting.HandwritingEngine.hasModel(service)) {
-                Log.w(XimeInputMethodService.TAG, "Handwriting model not found, redirecting to download")
+                FileLogger.w(XimeInputMethodService.TAG, "Handwriting model not found, redirecting to download")
                 android.widget.Toast.makeText(
                     service, "请先下载手写模型", android.widget.Toast.LENGTH_LONG
                 ).show()
@@ -287,13 +287,9 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             service.previousSchemaId = service.rimeEngine.getCurrentSchema()
             SettingsPreferences.setCurrentSchema(service, schemaId)
             service.keyboardViewModel.switchMain(com.kingzcheung.xime.keyboard.MainType.HANDWRITING)
-            // 手写方案：模型文件已确认存在，后台加载引擎
-            Thread {
-                try {
-                    com.kingzcheung.xime.handwriting.HandwritingEngine.initialize(service)
-                } catch (_: Exception) {
-                }
-            }.start()
+            // 手写模型按"用键盘时加载"管理：切到手写方案即展示手写键盘，
+            // 由 HandwritingKeyboardLayout 创建时（LaunchedEffect）负责加载，
+            // 此处不重复加载（避免与布局初始化并发双 bind/load）
             service.sessionController.updateSchemaName()
             return
         }
@@ -307,8 +303,22 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             // 部署/编译进行中 switchSchema 返回 false（不阻塞等待），
             // 此时不应继续触发其他 native 调用进入编译中的引擎
             if (!service.rimeEngine.switchSchema(schemaId)) {
-                Log.w(XimeInputMethodService.TAG, "switchSchema skipped: deployment in progress")
-                Toast.makeText(service, "词库部署中，请稍后再切换方案", Toast.LENGTH_SHORT).show()
+                if (service.rimeEngine.isMaintaining()) {
+                    FileLogger.w(XimeInputMethodService.TAG, "switchSchema skipped: deployment in progress")
+                    Toast.makeText(service, "词库部署中，请稍后再切换方案", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                // 引擎切换失败（常见：方案未部署/不在 schema_list，老版本升级残留）。
+                // 必须回滚偏好到引擎实际方案：偏好留着目标值会让 UI 状态与引擎
+                // 永久脱节（键盘已显示九键但数字键无人处理，候选栏始终 IDLE）。
+                // getCurrentSchema 无会话时返回空串——此时不动偏好，保留原值由
+                // IME 重启的恢复逻辑兜底，避免把空串写进偏好与 user.yaml
+                val actual = service.rimeEngine.getCurrentSchema()
+                if (actual.isNotEmpty()) {
+                    SettingsPreferences.setCurrentSchema(service, actual)
+                }
+                FileLogger.w(XimeInputMethodService.TAG, "switchSchema failed: target=$schemaId actual=$actual")
+                Toast.makeText(service, "方案未部署，请在方案管理中部署后再试", Toast.LENGTH_SHORT).show()
                 return
             }
             if (!service.rimeEngine.isAsciiMode()) {
@@ -324,7 +334,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             )
             Toast.makeText(service, "已切换输入方案", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Log.e(XimeInputMethodService.TAG, "Failed to switch schema", e)
+            FileLogger.e(XimeInputMethodService.TAG, "Failed to switch schema", e)
         }
     }
     

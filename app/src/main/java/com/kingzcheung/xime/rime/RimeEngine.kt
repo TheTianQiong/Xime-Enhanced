@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.rime
 
+import com.kingzcheung.xime.util.FileLogger
 import android.util.Log
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
@@ -189,6 +190,7 @@ class RimeEngine {
                 if (!isInitialized) {
                     try {
                         this.userDataDir = userDataDir
+                        nativeInstallSignalHandler(userDataDir)
                         notifyDeploymentStatus(true, "正在加载输入法引擎...")
                         nativeInitialize(userDataDir, sharedDataDir)
                         isInitialized = true
@@ -204,7 +206,7 @@ class RimeEngine {
 
                         notifyDeploymentStatus(false, "")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error during Rime initialization", e)
+                        FileLogger.e(TAG, "Error during Rime initialization", e)
                         notifyDeploymentStatus(false, "初始化失败")
                     }
                 }
@@ -245,7 +247,7 @@ class RimeEngine {
                 }
                 waited += 1000
             }
-            Log.w(TAG, "ensureSession: schemas not available after ${timeoutMs}ms, deployment may still be running")
+            FileLogger.w(TAG, "ensureSession: schemas not available after ${timeoutMs}ms, deployment may still be running")
             return false
         }
     }
@@ -336,6 +338,19 @@ class RimeEngine {
         return tryLocked(false) {
             if (!nativeHasSession()) return@tryLocked false
             nativeSelectCandidate(index)
+        }
+    }
+
+    /**
+     * 删除当前页候选（长按候选栏删除自造词）。
+     * 标准 C API delete_candidate_on_current_page：librime 对用户词典词条
+     * 执行 tombstone 标记（UpdateEntry -1），键盘无关（T9/全键盘通用）。
+     * @param index 当前页内的候选索引
+     */
+    fun deleteCandidateOnCurrentPage(index: Int): Boolean {
+        return tryLocked(false) {
+            if (!nativeHasSession()) return@tryLocked false
+            nativeDeleteCandidateOnCurrentPage(index)
         }
     }
 
@@ -433,14 +448,26 @@ class RimeEngine {
         // 部署/全量编译进行中（30s+）不阻塞等待：直接返回 false，避免主线程
         // onStartInput/selectSchema 等路径 ANR。部署完成后的 initRimeEngine
         // 流程会重新切换方案。非部署场景保持阻塞锁语义，保证切换可靠。
-        if (isMaintaining()) return false
+        if (isMaintaining()) {
+            FileLogger.w(TAG, "switchSchema($schemaId) skipped: deployment in progress")
+            return false
+        }
         locked {
-            if (!nativeHasSession()) return false
+            if (!nativeHasSession()) {
+                FileLogger.w(TAG, "switchSchema($schemaId) failed: no rime session")
+                return false
+            }
             // 在切换方案前，确保 T9 方案的 schema 补丁已注入
             // 这会在 user_data_dir 中创建 {schemaId}.custom.yaml 文件，
             // RIME 引擎加载方案时会自动应用 custom.yaml 中的 patch 补丁
             nativeEnsureT9SchemaPatches(schemaId)
-            return nativeSwitchSchema(schemaId)
+            val switched = nativeSwitchSchema(schemaId)
+            if (!switched) {
+                // 常见于方案未部署（不在 schema_list，如老版本升级残留）：
+                // 留证便于反馈日志定位（用户症状：键盘已切换但按键无候选）
+                FileLogger.w(TAG, "switchSchema($schemaId) failed: schema not available, current=${getCurrentSchema()}")
+            }
+            return switched
         }
     }
 
@@ -473,7 +500,7 @@ class RimeEngine {
         locked {
             ensureT9SchemaPatchesForDeployedSchemas(userDataDir)
             if (!nativeStartMaintenance(false)) {
-                Log.w(TAG, "deployIncremental: startMaintenance returned false, falling back to full deploy")
+                FileLogger.w(TAG, "deployIncremental: startMaintenance returned false, falling back to full deploy")
                 return false
             }
             var waited = 0L
@@ -482,7 +509,7 @@ class RimeEngine {
                 waited += 100
             }
             if (nativeIsMaintaining()) {
-                Log.w(TAG, "deployIncremental: maintenance timed out")
+                FileLogger.w(TAG, "deployIncremental: maintenance timed out")
                 return false
             }
             // 维护完成后更新 last_build_time，避免下次启动增量检测误判需重编译
@@ -619,6 +646,7 @@ class RimeEngine {
 
     // Native 方法声明
     private external fun nativeInitialize(userDataDir: String, sharedDataDir: String)
+    private external fun nativeInstallSignalHandler(userDataDir: String)
     private external fun nativeSetVerboseLogging(enabled: Boolean)
     private external fun nativeCreateSession(): Boolean
     private external fun nativeHasSession(): Boolean
@@ -632,6 +660,7 @@ class RimeEngine {
     private external fun nativeGetInput(): String?
     private external fun nativeGetComposition(): RimeComposition
     private external fun nativeSelectCandidate(index: Int): Boolean
+    private external fun nativeDeleteCandidateOnCurrentPage(index: Int): Boolean
     private external fun nativePageDown(): Boolean
     private external fun nativePageUp(): Boolean
     private external fun nativeHasNextPage(): Boolean

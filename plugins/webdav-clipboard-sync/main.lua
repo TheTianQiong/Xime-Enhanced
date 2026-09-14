@@ -15,7 +15,8 @@
 --          davUrl = 服务器根（如 https://dav.jianguoyun.com/dav/）
 --          remotePath = 远程目录（如 xime，留空为根目录）
 --   push   PUT 文件，body = Profile JSON（Content-Type: application/json）
---          目录不存在（409）→ 逐级 MKCOL 创建后重试
+--          目录不存在（409；部分服务器如 Alist/Nextcloud 返回 404）
+--          → 逐级 MKCOL 创建后重试
 --   pull   GET 文件，If-None-Match（ETag 缓存，ximed 无此优化，插件增强保留），
 --          304 → 无变更；404 → 远端尚无文件；200 → 解析 Profile JSON
 --   兼容   远端若为旧版纯文本（无 JSON 结构），按纯文本 profile 处理
@@ -77,8 +78,9 @@ local function ensureDirectories(fileUrl)
     dirPart = dirPart:gsub("/[^/]+$", "") or ""
     local basePath = base:gsub("^https?://[^/]+", ""):gsub("/+$", "")
     -- 去掉 davUrl 已有路径前缀，只创建剩余层级
-    if basePath ~= "" then
-        dirPart = dirPart:gsub("^" .. basePath, "")
+    -- （纯字符串前缀匹配，避免 gsub pattern 中 . - + 等特殊字符或前缀误匹配）
+    if basePath ~= "" and dirPart:sub(1, #basePath) == basePath then
+        dirPart = dirPart:sub(#basePath + 1)
     end
     dirPart = dirPart:gsub("^/+", "")
     local parts = {}
@@ -150,7 +152,6 @@ function plugin.getSettingsSchema()
             key = "testConnection",
             label = "测试连接",
             type = "button",
-            action = "testConnection",
             required = false,
         },
     }
@@ -192,9 +193,10 @@ function plugin.push(profile)
         host.log("push ok: PUT " .. url .. " -> " .. resp.status)
         return true
     end
-    -- 409 Conflict：目录不存在，逐级 MKCOL 后重试一次
-    if resp.status == 409 then
-        host.log("push: 409 目录不存在，尝试 MKCOL 创建")
+    -- 409 Conflict / 404 Not Found：目录不存在（部分服务器对 PUT 缺失父目录返回 404），
+    -- 逐级 MKCOL 后重试一次
+    if resp.status == 409 or resp.status == 404 then
+        host.log("push: " .. resp.status .. " 目录不存在，尝试 MKCOL 创建")
         if ensureDirectories(url) then
             local retry = host.http.request("PUT", url, headers, body)
             if retry ~= nil and retry.status >= 200 and retry.status < 300 then

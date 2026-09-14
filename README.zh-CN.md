@@ -10,6 +10,11 @@
   <a href="README.md">English</a> · <a href="README.zh-TW.md">繁體中文</a>
 </p>
 
+[<img src="https://f-droid.org/badge/get-it-on.png"
+    alt="Get it on F-Droid"
+    height="80">](https://f-droid.org/packages/com.kingzcheung.xime)
+
+
 [Xime 输入法 (Windows 版)](https://github.com/ximeiorg/winxime) | [Xime 输入法 (Linux 版)](https://github.com/ximeiorg/xime-wayland) | [联想词预测模型](https://github.com/ximeiorg/predictive-text) | [手写输入法模型](https://github.com/ximeiorg/ochwpro)
 
 一款基于 <a href="https://rime.im/">Rime</a> 引擎构建的 Android 五笔/拼音输入法，专注于简洁高效的中文输入体验。
@@ -40,6 +45,7 @@
 ---
 
 > 本输入法支持五笔/拼音输入，只是本人以五笔为主，拼音为辅，因此资源会倾向于五笔为主。
+如果你是拼音用户，默认的拼音不是很强大，你可以到扩展市场里下载如`凇雾拼音` 之类的方案。
 
 <table align="center">
   <tr>
@@ -138,6 +144,11 @@
 
 详细使用说明请查看 [使用文档](https://ime.ximei.me)。
 
+- [常见问题 FAQ](https://ime.ximei.me/faq.html)
+- [Rime 方案列表](https://ime.ximei.me/rime-list.html)
+- [插件列表](https://ime.ximei.me/plugin-list.html)
+- [AI 模型列表](https://ime.ximei.me/model-list.html)
+
 ## 构建
 
 ```bash
@@ -150,25 +161,6 @@ git submodule update --init --recursive
 # 构建 Release APK
 ./gradlew assembleRelease
 ```
-
-### AI 模型下载
-
-#### 智能联想词模型
-
-- **项目地址**: https://github.com/ximeiorg/predictive-text
-- **模型下载**: https://www.modelscope.cn/models/bikeand/predictive-text-small
-- **模型文件**: `model_int8_dynamic.onnx` (约 17MB)
-- **词表文件**: `vocab.json`
-- **存放位置**: `filesDir/` 目录（即应用私有目录根目录）
-- **功能**: 基于 Transformer 的中文联想词预测，提供智能候选词推荐
-
-#### 语音识别模型
-
-- **模型下载**: https://www.modelscope.cn/models/bikeand/asr
-- **模型文件**: `sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2` (约 132MB)
-- **功能**: 流式 zipformer2 中文语音识别（本地离线运行）
-
-**注意**: 所有模型均可直接在应用内"设置 > 智能联想/语音识别"页面下载，无需手动放置。
 
 ## 技术栈
 
@@ -197,3 +189,7 @@ git submodule update --init --recursive
 ## 许可证
 
 GPLv3 License
+
+Copyright © 2026 Kingz Cheung
+
+"Xime" 名称、Logo 及其他品牌资产**不在** GPLv3 开源授权范围内，详见 [TRADEMARKS.md](TRADEMARKS.md)。

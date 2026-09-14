@@ -21,10 +21,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.LibraryBooks
 import androidx.compose.material.icons.twotone.AutoAwesome
+import androidx.compose.material.icons.twotone.Backup
 import androidx.compose.material.icons.twotone.Ballot
 
 import androidx.compose.material.icons.twotone.Build
-import androidx.compose.material.icons.twotone.CloudSync
 import androidx.compose.material.icons.twotone.Description
 import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.GraphicEq
@@ -82,10 +82,10 @@ fun SettingsMainContent(
     onNavigateToSmartPrediction: () -> Unit,
     onNavigateToSpeechToText: () -> Unit,
     onNavigateToAbout: () -> Unit,
-    onNavigateToWebDav: () -> Unit = {},
     onNavigateToClipboardSync: () -> Unit = {},
     onNavigateToPermissionManager: () -> Unit = {},
-    onNavigateToExtensionStoreSettings: () -> Unit = {}
+    onNavigateToExtensionStoreSettings: () -> Unit = {},
+    onNavigateToBackup: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -380,10 +380,10 @@ fun SettingsMainContent(
             item {
                 SettingsSection(                title = "同步与备份", content = {
                     SettingsItem(
-                        icon = Icons.TwoTone.CloudSync,
-                        title = "WebDAV 同步",
-                        subtitle = "通过 WebDAV 备份和恢复输入方案与配置",
-                        onClick = onNavigateToWebDav,
+                        icon = Icons.TwoTone.Backup,
+                        title = "云备份",
+                        subtitle = "通过备份插件将配置备份到云端并恢复",
+                        onClick = onNavigateToBackup,
                         showArrow = true
                     )
                     SettingsItem(

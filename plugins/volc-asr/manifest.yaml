@@ -33,29 +33,3 @@ capabilities:
 network:
   hosts:
     - openspeech.bytedance.com
-
-# 配置字段声明（插件中心直接渲染表单）
-configSchema:
-  - key: apiKey
-    label: API Key
-    type: secret
-    placeholder: 输入火山方舟 API Key
-    helpText: 在火山引擎方舟平台申请开通流式语音识别后获取
-  - key: appKey
-    label: App Key（旧鉴权）
-    type: secret
-    required: false
-    placeholder: 旧版 App Key（可选）
-    section: 旧鉴权
-  - key: accessKey
-    label: Access Key（旧鉴权）
-    type: secret
-    required: false
-    placeholder: 旧版 Access Key（可选）
-    section: 旧鉴权
-  - key: resourceId
-    label: 模型资源 ID
-    type: text
-    defaultValue: volc.seedasr.sauc.duration
-    placeholder: volc.seedasr.sauc.duration
-    helpText: 默认流式识别 2.0（volc.seedasr.sauc.duration）；1.0 模型填 volc.bigasr.sauc.duration

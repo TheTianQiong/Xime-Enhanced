@@ -33,9 +33,11 @@ class LuaTypingStatsTest {
     private class MockCrypto : CryptoHostApi {
         override fun sha256(data: ByteArray): ByteArray = ByteArray(32)
         override fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray = ByteArray(32)
+        override fun hmacSha1(key: ByteArray, data: ByteArray): ByteArray = ByteArray(20)
         override fun hex(data: ByteArray): String = ""
         override fun base64(data: ByteArray): String = ""
         override fun utcTime(format: String): String = "20260828"
+        override fun epochSeconds(): Long = 1767225600
     }
 
     private fun newRuntime(store: PluginConfigStore): LuaScriptRuntime {
@@ -109,6 +111,20 @@ class LuaTypingStatsTest {
         throw AssertionError("面板 ui 未出现 metric value=$value")
     }
 
+    /**
+     * 等待 text_committed 快照被插件消费（persist 无条件写 last_seen_chars，可作消费信号）。
+     * conflated 通道连发会覆盖未消费事件：背靠背 dispatch 时首条可能在消费前被合并丢弃，
+     * last_seen 基线缺失会让后续差值断言永不成立（CI 负载下偶发超时）。
+     */
+    private fun awaitConsumed(store: PluginConfigStore, lastSeenChars: String) {
+        val deadline = System.currentTimeMillis() + 5000
+        while (System.currentTimeMillis() < deadline) {
+            if (store.get("last_seen_chars") == lastSeenChars) return
+            Thread.sleep(50)
+        }
+        throw AssertionError("快照未被消费: last_seen_chars != $lastSeenChars")
+    }
+
     @Test
     fun `首次事件不回溯历史，之后按差值累计`() {
         val store = InMemoryConfigStore()
@@ -116,6 +132,7 @@ class LuaTypingStatsTest {
 
         // 首次快照：last_seen 未记录 → delta = 0，不累计
         dispatchCommitted(runtime, "你好", totalChars = 100, totalCommits = 10)
+        awaitConsumed(store, "100")
         // 第二次快照：delta = 125 - 100 = 25
         dispatchCommitted(runtime, "世界你好", totalChars = 125, totalCommits = 11)
 
@@ -136,6 +153,7 @@ class LuaTypingStatsTest {
 
         // 首次快照 delta=0；第二次快照累计"你好世界"4 字
         dispatchCommitted(runtime, "你好", totalChars = 30, totalCommits = 1)
+        awaitConsumed(store, "30")
         dispatchCommitted(runtime, "你好世界", totalChars = 34, totalCommits = 2)
         awaitMetricValue(runtime, "4")
 
@@ -151,6 +169,7 @@ class LuaTypingStatsTest {
         val runtime = newRuntime(store)
 
         dispatchCommitted(runtime, "a", totalChars = 100, totalCommits = 1)
+        awaitConsumed(store, "100")
         dispatchCommitted(runtime, "b", totalChars = 110, totalCommits = 2)
         awaitMetricValue(runtime, "10")
 
@@ -184,6 +203,8 @@ class LuaTypingStatsTest {
 
         // 首次快照 delta=0，累计 0 → 新手（含 🌱 徽章）
         dispatchCommitted(runtime, "你好", totalChars = 100, totalCommits = 1)
+        // 面板 UI 断言在初始状态也成立，不能作消费屏障，须显式等待
+        awaitConsumed(store, "100")
         awaitPanelUi(runtime, "🌱 新手")
         awaitPanelUi(runtime, "✨ 距「入门学徒」还差 1000 字")
 
@@ -200,6 +221,7 @@ class LuaTypingStatsTest {
         // 第一段生命周期
         var runtime = newRuntime(store)
         dispatchCommitted(runtime, "你好世界", totalChars = 50, totalCommits = 1)
+        awaitConsumed(store, "50")
         dispatchCommitted(runtime, "，再见", totalChars = 65, totalCommits = 2)
         awaitMetricValue(runtime, "15")
         runtime.close()

@@ -78,7 +78,7 @@ fun ClipboardView(
     bottomPaddingDp: Int = 0,
     modifier: Modifier = Modifier,
     onQuickSendAddClick: (() -> Unit)? = null,
-    onQuickSendEditItem: ((Long, String) -> Unit)? = null,
+    onQuickSendEditItem: ((Long, String, String) -> Unit)? = null,
     onPullRemote: (() -> Unit)? = null,
     pullRemoteAvailable: Boolean = false,
 ) {
@@ -419,7 +419,7 @@ fun ClipboardView(
                             icon = Icons.Default.Create,
                             label = "编辑",
                             onClick = {
-                                edit(anchor.item.id, anchor.item.text)
+                                edit(anchor.item.id, anchor.item.text, anchor.item.code)
                             }
                         )
                     },
