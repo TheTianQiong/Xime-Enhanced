@@ -24,8 +24,21 @@ object ChineseSymbolPreferences {
     val ASCII_ROW2 = listOf("@", "#", "$", "&", "_", "-", "+", "(", ")", "/")
     val ASCII_ROW3 = listOf("*", ",", "\"", "'", ".", "!", "?")
 
+    /** 中文模式上滑手势可自定义的按键（对应 xime.yaml 中文 qwerty 的上滑定义）。 */
+    val SWIPE_KEYS = listOf(
+        "a", "s", "d", "f", "g", "h", "j", "k", "l",
+        "z", "x", "c", "v", "b", "n", "m", "'",
+    )
+
+    /** 上滑提示的中文默认字符，仅用于设置页展示「当前默认」。 */
+    val DEFAULT_SWIPE = listOf(
+        "～", "／", "：", "；", "“", "”", "－", "（", "）",
+        "＊", "＠", "、", "？", "！", "％", "＃", "。",
+    )
+
     private const val KEY_ROW2 = "cn_symbol_row2"
     private const val KEY_ROW3 = "cn_symbol_row3"
+    private const val KEY_SWIPE = "cn_symbol_swipe"
 
     /** 单元分隔符（U+001F）：正常符号不会包含，避免与符号本身冲突。 */
     private val SEPARATOR = 0x1F.toChar().toString()
@@ -47,17 +60,56 @@ object ChineseSymbolPreferences {
         update(context, KEY_ROW3, DEFAULT_ROW3, index, char)
     }
 
-    /** 恢复默认。 */
+    // ── 中文模式上滑手势字符覆盖 ──
+    // 方案的 swipe_up 提示用全角（如 ～）、实际上屏值却是半角（如 ~），中文模式下
+    // 依赖方案标点转换，雾凇拼音等方案下二者不一致。此处允许用户按个人习惯覆盖：
+    // 覆盖后「键面提示」与「上屏字符」统一为同一字符。留空表示走方案默认。
+
+    /** 上滑覆盖表：按键 → 字符（仅含已覆盖项）。 */
+    fun getSwipeOverrides(context: Context): Map<String, String> =
+        decodePairs(SettingsPreferences.getPrefsPublic(context).getString(KEY_SWIPE, null))
+
+    fun setSwipeOverride(context: Context, key: String, char: String) {
+        val map = getSwipeOverrides(context).toMutableMap()
+        map[key.lowercase()] = char
+        saveSwipeOverrides(context, map)
+    }
+
+    /** 清除某个键的覆盖，回到方案默认。 */
+    fun removeSwipeOverride(context: Context, key: String) {
+        val map = getSwipeOverrides(context).toMutableMap()
+        map.remove(key.lowercase())
+        saveSwipeOverrides(context, map)
+    }
+
+    /**
+     * 中文模式下该键的上滑覆盖字符。
+     * 英文模式（[isAsciiMode] = true）或未覆盖时返回 null，由调用方走方案默认值。
+     */
+    fun swipeUpOverride(context: Context, key: String, isAsciiMode: Boolean): String? =
+        if (isAsciiMode) null else getSwipeOverrides(context)[key.lowercase()]
+
+    private fun saveSwipeOverrides(context: Context, map: Map<String, String>) {
+        val text = encodePairs(map)
+        SettingsPreferences.getPrefsPublic(context).edit().apply {
+            if (text.isEmpty()) remove(KEY_SWIPE) else putString(KEY_SWIPE, text)
+        }.apply()
+    }
+
+    /** 恢复默认（含上滑覆盖）。 */
     fun reset(context: Context) {
         SettingsPreferences.getPrefsPublic(context).edit()
             .remove(KEY_ROW2)
             .remove(KEY_ROW3)
+            .remove(KEY_SWIPE)
             .apply()
     }
 
     /** 是否已偏离默认值（用于设置页展示「恢复默认」可用性）。 */
     fun isCustomized(context: Context): Boolean =
-        getRow2(context) != DEFAULT_ROW2 || getRow3(context) != DEFAULT_ROW3
+        getRow2(context) != DEFAULT_ROW2 ||
+            getRow3(context) != DEFAULT_ROW3 ||
+            getSwipeOverrides(context).isNotEmpty()
 
     private fun update(
         context: Context,
@@ -89,4 +141,22 @@ object ChineseSymbolPreferences {
     }
 
     internal fun encode(chars: List<String>): String = chars.joinToString(SEPARATOR)
+
+    /** 序列化「按键=字符」覆盖表；空值项直接丢弃（等价于未覆盖）。 */
+    internal fun encodePairs(map: Map<String, String>): String =
+        map.entries
+            .filter { it.key.isNotEmpty() && it.value.isNotEmpty() }
+            .joinToString(SEPARATOR) { "${it.key}=${it.value}" }
+
+    /** 反序列化覆盖表：忽略缺少 '='、键或值为空的脏项。 */
+    internal fun decodePairs(raw: String?): Map<String, String> {
+        if (raw.isNullOrEmpty()) return emptyMap()
+        return raw.split(SEPARATOR)
+            .mapNotNull { entry ->
+                val idx = entry.indexOf('=')
+                if (idx <= 0 || idx == entry.length - 1) return@mapNotNull null
+                entry.substring(0, idx) to entry.substring(idx + 1)
+            }
+            .toMap()
+    }
 }

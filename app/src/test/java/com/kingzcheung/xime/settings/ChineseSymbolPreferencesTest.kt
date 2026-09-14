@@ -96,4 +96,47 @@ class ChineseSymbolPreferencesTest {
             ),
         )
     }
+
+    // ── 上滑手势覆盖表 ──
+
+    @Test
+    fun `上滑按键与默认字符数量一致`() {
+        // 设置页按下标对齐展示「按键 · 默认字符」，数量不一致会错位
+        assertEquals(
+            ChineseSymbolPreferences.SWIPE_KEYS.size,
+            ChineseSymbolPreferences.DEFAULT_SWIPE.size,
+        )
+    }
+
+    @Test
+    fun `上滑覆盖表编码后可完整还原`() {
+        val overrides = mapOf("a" to "～", "s" to "／", "m" to "＃")
+        assertEquals(
+            overrides,
+            ChineseSymbolPreferences.decodePairs(ChineseSymbolPreferences.encodePairs(overrides)),
+        )
+    }
+
+    @Test
+    fun `上滑覆盖表未存储时为空`() {
+        assertEquals(emptyMap<String, String>(), ChineseSymbolPreferences.decodePairs(null))
+        assertEquals(emptyMap<String, String>(), ChineseSymbolPreferences.decodePairs(""))
+    }
+
+    @Test
+    fun `上滑覆盖表忽略脏项`() {
+        // 缺 '='、空键、空值都应丢弃，只保留合法项
+        val raw = listOf("a=～", "broken", "=x", "s=", "m=＃").joinToString("")
+        assertEquals(
+            mapOf("a" to "～", "m" to "＃"),
+            ChineseSymbolPreferences.decodePairs(raw),
+        )
+    }
+
+    @Test
+    fun `上滑覆盖表丢弃空值项`() {
+        // 空值等价于「未覆盖」，不应写入存储
+        assertEquals("a=～", ChineseSymbolPreferences.encodePairs(mapOf("a" to "～", "s" to "")))
+        assertEquals("", ChineseSymbolPreferences.encodePairs(emptyMap()))
+    }
 }
