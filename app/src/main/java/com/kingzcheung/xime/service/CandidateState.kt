@@ -1,5 +1,7 @@
 package com.kingzcheung.xime.service
 
+import com.kingzcheung.xime.rime.RimeCandidate
+
 data class CandidateState(
     val candidates: List<String> = emptyList(),
     val candidateComments: List<String> = emptyList(),
@@ -15,5 +17,8 @@ data class CandidateState(
     val englishReplaceSupported: Boolean = true,
     /** 候选词变换映射（插件 candidate_transform 能力）：与 [candidates] 平行；
      *  空列表 = 纯引擎语义（显示 index 即引擎 index）。见 CandidateAction。 */
-    val candidateActions: List<CandidateAction> = emptyList()
+    val candidateActions: List<CandidateAction> = emptyList(),
+    /** 跨页全量候选（仅候选展开态时由服务层填充，供本地分页与单字筛选）。
+     *  空列表 = 未填充或引擎无候选。全局索引用于 selectCandidateByGlobalIndex。 */
+    val expandedCandidates: List<RimeCandidate> = emptyList()
 )

@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -107,6 +108,7 @@ data class CandidateBarCallbacks(
 fun CandidateBar(
     state: CandidateBarState,
     page: KeyboardPage = KeyboardPage.Main(com.kingzcheung.xime.keyboard.MainType.FULL),
+    candidatePageExpanded: Boolean = false,
     toolbarActions: List<ToolbarAction> = emptyList(),
     visuals: CandidateBarVisuals,
     callbacks: CandidateBarCallbacks,
@@ -156,6 +158,10 @@ fun CandidateBar(
         rowPaddingPx + maxOf(moreBtn, clearBtn) + hideBtn + 8.dp.toPx()
     }
 
+    // 候选行滚动状态：需在 state 分支前声明——ChineseCandidates 的 hasAnyMore
+    // 叠加 canScrollForward 判断（见分支内注释）
+    val candidateListState = rememberLazyListState()
+
     val displayCandidates: List<String>
     val displayAssociation: List<String>
     val displayComments: List<String>
@@ -173,9 +179,11 @@ fun CandidateBar(
         }
         is CandidateBarState.ChineseCandidates -> {
             val taken = s.candidates.take(20)
+            // 候选栏按设置的"每页候选词数"显示引擎当前页，可左右滑动查看放不下的候选
             displayCandidates = taken
             displayComments = s.comments
-            hasAnyMore = s.hasMore
+
+            hasAnyMore = s.hasMore || candidateListState.canScrollForward
             showLeftIcon = false
             displayAssociation = remember(s.associationCandidates, taken, s.inputText, textMeasurer) {
                 if (taken.isEmpty()) {
@@ -187,21 +195,21 @@ fun CandidateBar(
                             style = TextStyle(fontSize = candidateTextSize.sp)
                         ).size.width.toFloat()
                     }
-                    val leftSidePx = with(density) { rowPaddingPx + 32.dp.toPx() }
-                    val lazyRowWidthPx = screenWidthPx - leftSidePx - rightSidePx
+                    val leftPx = with(density) { rowPaddingPx + 32.dp.toPx() }
+                    val rowWidthPx = screenWidthPx - leftPx - rightSidePx
                     val regularWidthPx = taken.sumOf { c ->
                         measureText(c).toDouble() + itemPaddingPx
                     }.toFloat()
                     val dividerWidthPx = with(density) { 9.dp.toPx() }
-                    val availablePx = lazyRowWidthPx - regularWidthPx - dividerWidthPx
+                    val availablePx = rowWidthPx - regularWidthPx - dividerWidthPx
 
-                    var usedPx = 0f
+                    var used = 0f
                     val result = mutableListOf<String>()
                     for (c in s.associationCandidates) {
                         val w =
                             measureText(c) + itemPaddingPx + (if (result.isEmpty()) 0f else spacingPx)
-                        if (usedPx + w <= availablePx) {
-                            usedPx += w
+                        if (used + w <= availablePx) {
+                            used += w
                             result.add(c)
                         } else break
                     }
@@ -243,7 +251,6 @@ fun CandidateBar(
         else -> true
     }
 
-    val candidateListState = rememberLazyListState()
     LaunchedEffect(displayCandidates) {
         candidateListState.scrollToItem(0)
     }
@@ -387,24 +394,31 @@ fun CandidateBar(
             }
 
             if (inlineSuggestions.isNotEmpty()) {
-                inlineSuggestions.forEachIndexed { index, suggestion ->
-                    InlineSuggestionView(
-                        suggestion = suggestion,
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(180.dp),
-                    )
-                    if (index < inlineSuggestions.lastIndex) {
-                        InlineSuggestionDivider(color = visuals.dividerColor)
+                LazyRow(
+                    // 占满配额：内容少时建议靠左、右侧留白到收起按钮（收起按钮
+                    // 因此固定最右）；内容超出配额时占满并可横向滑动查看后续建议；
+                    // clipToBounds：滑动时滑出边界的建议裁剪掉，避免与左侧 logo 重叠
+                    modifier = Modifier
+                        .weight(1f)
+                        .clipToBounds(),
+                ) {
+                    itemsIndexed(inlineSuggestions, key = { index, _ -> index }) { _, suggestion ->
+                        Box(modifier = Modifier.fillMaxHeight()) {
+                            InlineSuggestionView(
+                                suggestion = suggestion,
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .width(180.dp),
+                            )
+                            // 每条尾部 1dp 分隔线：条目之间为间隔，最后一条的尾线
+                            // 同时充当与候选词区的分界（与旧平铺布局视觉一致）
+                            InlineSuggestionDivider(
+                                modifier = Modifier.align(Alignment.CenterEnd),
+                                color = visuals.dividerColor,
+                            )
+                        }
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .padding(vertical = 6.dp)
-                        .background(visuals.dividerColor),
-                )
             }
 
             LazyRow(
@@ -499,33 +513,37 @@ fun CandidateBar(
 
             when {
                 state is CandidateBarState.Idle -> {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f, fill = true)
-                            .horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        if (toolbarActions.isNotEmpty()) {
-                            toolbarActions.forEach { action ->
-                                val interactionSource = remember { MutableInteractionSource() }
-                                val isPressed by interactionSource.collectIsPressedAsState()
-                                Box(
-                                    modifier = Modifier
-                                        .padding(horizontal = 5.dp)
-                                        .size(32.dp)
-                                        .clickable(
-                                            interactionSource = interactionSource,
-                                            indication = null,
-                                            onClick = action.onClick
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    ToolbarButtonIcon(
-                                        item = action.item,
-                                        tint = if (isPressed) iconButtonTint.copy(alpha = 0.6f) else iconButtonTint,
-                                        modifier = Modifier.size(22.dp),
-                                    )
+                    // 显示内联建议时隐藏工具栏按钮区，把宽度让给建议；logo 与
+                    // 收起按钮保留，退格回到 idle 时的状态感知不变
+                    if (inlineSuggestions.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f, fill = true)
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            if (toolbarActions.isNotEmpty()) {
+                                toolbarActions.forEach { action ->
+                                    val interactionSource = remember { MutableInteractionSource() }
+                                    val isPressed by interactionSource.collectIsPressedAsState()
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 5.dp)
+                                            .size(32.dp)
+                                            .clickable(
+                                                interactionSource = interactionSource,
+                                                indication = null,
+                                                onClick = action.onClick
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        ToolbarButtonIcon(
+                                            item = action.item,
+                                            tint = if (isPressed) iconButtonTint.copy(alpha = 0.6f) else iconButtonTint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -556,7 +574,7 @@ fun CandidateBar(
                         }
                     }
                 }
-                page is KeyboardPage.Overlay && page.route is OverlayRoute.CandidatePage -> {
+                candidatePageExpanded -> {
                     if (callbacks.onBack != null) {
                         Box(
                             modifier = Modifier

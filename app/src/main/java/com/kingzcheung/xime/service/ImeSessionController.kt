@@ -7,6 +7,7 @@ import com.kingzcheung.xime.rime.buildT9DisplayState
 import com.kingzcheung.xime.settings.SchemaManager
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.ui.keyboard.isT9Schema
+import com.kingzcheung.xime.ui.keyboard.isHandwritingSchema
 import com.kingzcheung.xime.util.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -136,10 +137,12 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
         if (isAsciiMode != service.uiState.value.isAsciiMode) {
             FileLogger.i(XimeInputMethodService.TAG, "applyComposition: ascii ${service.uiState.value.isAsciiMode}->$isAsciiMode")
         }
+        // 展开态时刷新跨页全量候选并重置页码（编码已变化）
+        service.refreshExpandedCandidates()
         // composing 快照 → 插件（input_changed 事件；T9 与候选栏同源显示态）
         service.pluginEvents.dispatchInputChanged(if (isT9Schema) displayText else inputText)
 
-        if (pendingEnglish.isNotEmpty() && service.supportsEnglishCandidateReplace()) {
+        if (pendingEnglish.isNotEmpty() && !service.isSecretEditor() && service.supportsEnglishCandidateReplace()) {
             service.serviceScope.launch {
                 val candidates = service.predictionManager.getEnglishAssociations(pendingEnglish, PredictionManager.MAX_ASSOCIATION_COUNT)
                 withContext(Dispatchers.Main) {
@@ -253,10 +256,14 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
             candidateActions = if (isT9Schema) emptyList() else pluginActions
         )
         service.uiState.value = service.uiState.value.copy(isAsciiMode = isAsciiMode)
+        // 展开态时刷新跨页全量候选并重置页码（编码已变化）
+        service.refreshExpandedCandidates()
+        // 候选展开页：编码删空（候选与联想均空）时自动收起，不留空页
+        service.maybeCollapseCandidatePage()
         // composing 快照 → 插件（input_changed 事件；空编码表示本轮输入结束）
         service.pluginEvents.dispatchInputChanged(if (isT9Schema) displayText else result.inputText)
 
-        if (pendingEnglish.isNotEmpty() && service.supportsEnglishCandidateReplace()) {
+        if (pendingEnglish.isNotEmpty() && !service.isSecretEditor() && service.supportsEnglishCandidateReplace()) {
             service.serviceScope.launch {
                 val candidates = service.predictionManager.getEnglishAssociations(pendingEnglish, PredictionManager.MAX_ASSOCIATION_COUNT)
                 withContext(Dispatchers.Main) {
@@ -287,12 +294,17 @@ internal class ImeSessionController(private val service: XimeInputMethodService)
             val engineSchemaId = service.rimeEngine.getCurrentSchema()
             // session 未就绪时 getCurrentSchema() 返回空串：用持久化方案兜底，
             // 避免空值覆盖已正确的 currentSchemaId/schemaName 导致键盘退化为全键盘
-            val currentSchemaId = if (isHandwritingMode) {
-                HANDWRITING_SCHEMA_ID
-            } else if (engineSchemaId.isNotEmpty()) {
-                engineSchemaId
-            } else {
-                SettingsPreferences.getCurrentSchema(context)
+            val currentSchemaId = when {
+                // 引擎已切到非手写方案时以引擎为准：键盘若仍停留手写页（部署期间
+                // fallback 的残留），钉死 handwriting 会让 UI 与引擎永久脱节，
+                // 表现为选完方案后键盘卡在手写页
+                engineSchemaId.isNotEmpty() && !isHandwritingSchema(engineSchemaId) -> engineSchemaId
+                // 手写页在态时报告当前持久化的手写方案 id（内置为 handwriting，
+                // 第三方手写方案报告其自身 id，方案名/图标显示才正确）
+                isHandwritingMode -> SettingsPreferences.getCurrentSchema(context)
+                    .takeIf { isHandwritingSchema(it) } ?: HANDWRITING_SCHEMA_ID
+                engineSchemaId.isNotEmpty() -> engineSchemaId
+                else -> SettingsPreferences.getCurrentSchema(context)
             }
             val name = SchemaManager.getSchemaDisplayName(context, currentSchemaId)
 

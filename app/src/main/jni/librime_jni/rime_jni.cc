@@ -411,12 +411,55 @@ public:
         return rime->select_candidate_on_current_page(session_id_, index);
     }
 
+    // 跨页遍历整个候选列表（librime candidate_list 迭代器，与引擎分页无关），
+    // 供候选展开页本地分页使用；maxCount 防御超大列表。
+    bool getAllCandidates(std::vector<std::pair<std::string, std::string>>& candidates,
+                          size_t maxCount) {
+        if (!rime || !session_id_) return false;
+        RimeCandidateListIterator iterator;
+        if (!rime->candidate_list_begin(session_id_, &iterator)) return false;
+        while (candidates.size() < maxCount && rime->candidate_list_next(&iterator)) {
+            const char* text = iterator.candidate.text;
+            const char* comment = iterator.candidate.comment;
+            candidates.push_back(std::make_pair(
+                text ? text : "",
+                comment ? comment : ""
+            ));
+        }
+        rime->candidate_list_end(&iterator);
+        LOGD("getAllCandidates: collected=%zu (max=%zu)", candidates.size(), maxCount);
+        return true;
+    }
+
+    // 按候选列表全局索引选词（跨页，与 candidate_list 遍历顺序一致）
+    bool selectCandidateByGlobalIndex(int index) {
+        if (!rime || !session_id_ || index < 0) {
+            LOGD("selectCandidateByGlobalIndex: invalid state, index=%d", index);
+            return false;
+        }
+        bool result = rime->select_candidate(session_id_, static_cast<size_t>(index));
+        LOGD("selectCandidateByGlobalIndex: index=%d -> %d", index, result ? 1 : 0);
+        return result;
+    }
+
     // 删除当前页候选（标准 C API delete_candidate_on_current_page）：
     // librime 对 Phrase 候选执行 userdb tombstone（UpdateEntry -1），
     // 即自造词/调频词删除；非用户词由 rime 侧自行判定，无副作用。
     bool deleteCandidateOnCurrentPage(int index) {
         if (!rime || !session_id_) return false;
         return rime->delete_candidate_on_current_page(session_id_, index);
+    }
+
+    // 按候选列表全局索引删除（跨页，与 candidate_list 遍历顺序一致），
+    // 供候选展开页本地分页长按删除自造词。
+    bool deleteCandidateByGlobalIndex(int index) {
+        if (!rime || !session_id_ || index < 0) {
+            LOGD("deleteCandidateByGlobalIndex: invalid state, index=%d", index);
+            return false;
+        }
+        bool result = rime->delete_candidate(session_id_, static_cast<size_t>(index));
+        LOGD("deleteCandidateByGlobalIndex: index=%d -> %d", index, result ? 1 : 0);
+        return result;
     }
     
     bool pageDown() {
@@ -433,7 +476,7 @@ public:
         if (!rime || !session_id_) return false;
         RIME_STRUCT(RimeContext, context);
         if (rime->get_context(session_id_, &context)) {
-            bool result = context.menu.page_no < context.menu.page_no + 1;
+            bool result = !context.menu.is_last_page;
             rime->free_context(&context);
             return result;
         }
@@ -1292,6 +1335,46 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeSelectCandidate(
     return Rime::Instance().selectCandidate(index) ? JNI_TRUE : JNI_FALSE;
 }
 
+// 获取全量候选列表（跨页遍历，含编码注释），maxCount 为收集上限
+JNIEXPORT jobjectArray JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeGetAllCandidates(
+    JNIEnv* env,
+    jobject thiz,
+    jint maxCount
+) {
+    std::vector<std::pair<std::string, std::string>> candidates;
+    Rime::Instance().getAllCandidates(candidates, static_cast<size_t>(maxCount));
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    jclass stringArrayClass = env->FindClass("[Ljava/lang/String;");
+
+    jobjectArray result = env->NewObjectArray(candidates.size(), stringArrayClass, nullptr);
+
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        jobjectArray pair = env->NewObjectArray(2, stringClass, nullptr);
+        jstring text = env->NewStringUTF(candidates[i].first.c_str());
+        jstring comment = env->NewStringUTF(candidates[i].second.c_str());
+        env->SetObjectArrayElement(pair, 0, text);
+        env->SetObjectArrayElement(pair, 1, comment);
+        env->SetObjectArrayElement(result, i, pair);
+        env->DeleteLocalRef(text);
+        env->DeleteLocalRef(comment);
+        env->DeleteLocalRef(pair);
+    }
+
+    return result;
+}
+
+// 按候选列表全局索引选词（跨页，供展开页本地分页点选）
+JNIEXPORT jboolean JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeSelectCandidateByGlobalIndex(
+    JNIEnv* env,
+    jobject thiz,
+    jint index
+) {
+    return Rime::Instance().selectCandidateByGlobalIndex(index) ? JNI_TRUE : JNI_FALSE;
+}
+
 // 删除当前页候选（长按候选栏删除自造词）：标准 C API
 // delete_candidate_on_current_page，index 为当前页内索引。
 JNIEXPORT jboolean JNICALL
@@ -1301,6 +1384,16 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeDeleteCandidateOnCurrentPage(
     jint index
 ) {
     return Rime::Instance().deleteCandidateOnCurrentPage(index) ? JNI_TRUE : JNI_FALSE;
+}
+
+// 按候选列表全局索引删除（跨页，供候选展开页长按删除自造词）
+JNIEXPORT jboolean JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeDeleteCandidateByGlobalIndex(
+    JNIEnv* env,
+    jobject thiz,
+    jint index
+) {
+    return Rime::Instance().deleteCandidateByGlobalIndex(index) ? JNI_TRUE : JNI_FALSE;
 }
 
 // 翻页 - 下一页

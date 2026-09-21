@@ -5,6 +5,7 @@ import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import com.kingzcheung.xime.association.AssociationManager
 import com.kingzcheung.xime.keyboard.OverlayRoute
+import com.kingzcheung.xime.rime.RimeCandidate
 import com.kingzcheung.xime.rime.resolveRimeCandidateIndex
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.ui.keyboard.KeyboardLayoutState
@@ -690,13 +691,16 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                         } else {
                             displayCandidates.map { it.text } to displayCandidates.map { it.comment }
                         }
-                        val restricted = service.isEditorRestricted()
+                        // 秘密输入框（密码/终端）禁英文联想：联想会泄漏输入前缀，
+                        // 回删替换也会破坏受限宿主的输入。NO_SUGGESTIONS 只是宿主
+                        // 不要内联补全，候选栏联想仍提供（与退格/applyComposition 路径同口径）。
+                        val secret = service.isSecretEditor()
                         service.candidateState.value = service.candidateState.value.copy(
                             inputText = capturedInputText,
                             candidates = filteredTexts,
                             candidateComments = filteredComments,
                             isComposing = capturedInputText.isNotEmpty(),
-                            associationCandidates = if (restricted || ((capturedIsAscii || !service.isChineseMode) && pendingEnglish.isEmpty())) emptyList() else service.candidateState.value.associationCandidates,
+                            associationCandidates = if (secret || ((capturedIsAscii || !service.isChineseMode) && pendingEnglish.isEmpty())) emptyList() else service.candidateState.value.associationCandidates,
                             isShowingRecentClipboard = false,
                             hasNextPage = capturedHasNext,
                             hasPrevPage = capturedHasPrev,
@@ -706,9 +710,7 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                             FileLogger.i(XimeInputMethodService.TAG, "keyRouter UI refresh: ascii ${service.uiState.value.isAsciiMode}->$capturedIsAscii")
                         }
                         service.uiState.value = service.uiState.value.copy(isAsciiMode = capturedIsAscii)
-                        // 受限输入框（密码/终端/NO_SUGGESTIONS）不拉取英文联想：
-                        // 联想会泄漏输入前缀，回删替换机制也会破坏受限宿主的输入
-                        if (pendingEnglish.isNotEmpty() && !restricted && service.supportsEnglishCandidateReplace()) {
+                        if (pendingEnglish.isNotEmpty() && !secret && service.supportsEnglishCandidateReplace()) {
                             service.serviceScope.launch {
                                 val candidates = service.predictionManager.getEnglishAssociations(pendingEnglish, PredictionManager.MAX_ASSOCIATION_COUNT)
                                 withContext(Dispatchers.Main) {
@@ -824,7 +826,7 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                             candidateActions = emptyList()
                         )
                     }
-                    if (service.supportsEnglishCandidateReplace()) {
+                    if (!service.isSecretEditor() && service.supportsEnglishCandidateReplace()) {
                         service.serviceScope.launch {
                             val candidates = service.predictionManager.getEnglishAssociations(newPending, PredictionManager.MAX_ASSOCIATION_COUNT)
                             withContext(Dispatchers.Main) {
@@ -844,6 +846,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                             candidateActions = emptyList()
                         )
                     }
+                    // 待确认英文已删空：候选展开页若开着则收起（无内容可展示）
+                    service.maybeCollapseCandidatePage()
                 }
             }
 
@@ -884,6 +888,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                     associationCandidates = emptyList(),
                     isShowingRecentClipboard = false
                 )
+                // 候选展开页：联想/剪贴板候选清空后无内容，收起
+                service.maybeCollapseCandidatePage()
             }
 
             // 4. 无候选也无编码：直接回删已上屏文本
@@ -900,6 +906,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                     associationCandidates = emptyList(),
                     isShowingRecentClipboard = false
                 )
+                // 候选展开页：无候选无编码，收起
+                service.maybeCollapseCandidatePage()
             }
         }
     }
@@ -915,10 +923,17 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
         service.keyJobs.trySend(job)
     }
 
-    suspend fun selectCandidateAsync(index: Int) {
-        // 插件候选（candidate_transform 变换）：直接上屏插件文本（所见即所得），不走引擎选词。
-        // 引擎引用项继续走下方引擎路径，用映射记录的引擎索引（显示 index 因插件候选插入而错位）。
-        val pendingAction = service.candidateState.value.candidateActions.getOrNull(index)
+    suspend fun selectCandidateAsync(index: Int, expandedCandidate: RimeCandidate? = null) {
+        // 展开页点选（expandedCandidate 非空）：取词/注释以展开页显示的同一份
+        // 全量列表为准（所见即所得）。index 是全量索引，不得用于索引引擎当前页的
+        // candidates/candidateComments——部分选拼音（SELECTION 态）或候选超页时
+        // 两列表错位，全局索引套在当前页上会取错词（如点长词只上屏另一短词）。
+        // 插件候选 actions 按页内索引记录，展开页索引同样不适用，直接跳过检测。
+        val pendingAction = if (expandedCandidate == null) {
+            service.candidateState.value.candidateActions.getOrNull(index)
+        } else {
+            null
+        }
         if (pendingAction != null && pendingAction.isPluginCandidate) {
             // 防御：中英/方案切换后引擎组合已清空但 candidateState 残留旧候选+actions，
             // 此时点选必须回落原生路径（引擎侧 selectCandidate 失败自动防呆，与旧行为一致），
@@ -931,14 +946,22 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
             }
         }
 
-        val selectedCandidate = if (index < service.candidateState.value.candidates.size) {
-            service.candidateState.value.candidates[index]
-        } else null
+        val selectedCandidate = expandedCandidate?.text
+            ?: if (index < service.candidateState.value.candidates.size) {
+                service.candidateState.value.candidates[index]
+            } else null
 
         val isT9 = isT9Schema(service.uiState.value.currentSchemaId)
-        val candidatePinyin = if (isT9 && index < service.candidateState.value.candidateComments.size) {
-            service.candidateState.value.candidateComments[index]
-        } else null
+        val candidatePinyin = if (isT9) {
+            expandedCandidate?.comment?.takeIf { it.isNotEmpty() }
+                ?: if (index < service.candidateState.value.candidateComments.size) {
+                    service.candidateState.value.candidateComments[index]
+                } else {
+                    null
+                }
+        } else {
+            null
+        }
 
         // 在 RIME 真正 select/commit 之前，先同步通知 T9 控制器消费数字。
         // 控制器返回 true 表示输入序列已被该候选词完整消费，服务层应视为 full commit。
@@ -1274,6 +1297,85 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
     internal fun pageUp() {
         postRimeJob {
             service.rimeEngine.pageUp()
+            withContext(Dispatchers.Main) {
+                service.updateUI()
+            }
+        }
+    }
+
+    /**
+     * 候选展开页点选：按跨页全局索引选词（select_candidate，区别于候选栏的
+     * 当前页内索引 select_candidate_on_current_page）。
+     *
+     * 关键：rime 的 select 只是把候选放进内部 commit 缓冲，宿主必须再调
+     * [RimeEngine.commit]（get_commit）拉取文本并自行上屏——只刷新 composition
+     * 拿不到上屏内容（编码已消费、字却丢失，即此前"展开页点选无法上屏"的根因）。
+     */
+    internal fun selectCandidateGlobal(globalIndex: Int) {
+        // 点选震动反馈与候选栏同源（performKeyPressEffect），保证手感一致
+        service.composeViewRef?.let { service.feedbackManager.performKeyPressEffect(view = it) }
+        // 入队前先按全局索引取全量候选：调用线程读到的 expandedCandidates 正是
+        // UI 渲染的同一份列表；入队后再取可能被编码刷新清空/重建而扑空
+        val expandedCandidate = service.candidateState.value.expandedCandidates.getOrNull(globalIndex)
+        postRimeJob {
+            // T9 方案的选词消费由 t9_processor 独立完成，直接调引擎 select 会
+            // 遗留 [confirmed, phony] 残留组合态（见 selectCandidateAsync 注释），
+            // 降级走候选栏同款路径；取词/注释必须用展开页同一份全量候选——
+            // 全局索引与引擎当前页列表错位时会取错词/丢字
+            if (isT9Schema(service.uiState.value.currentSchemaId)) {
+                selectCandidateAsync(globalIndex, expandedCandidate)
+                return@postRimeJob
+            }
+            val ok = service.rimeEngine.selectCandidateByGlobalIndex(globalIndex)
+            FileLogger.i(
+                "ImeKeyRouter",
+                "selectCandidateGlobal: index=$globalIndex ok=$ok"
+            )
+            if (!ok) return@postRimeJob
+
+            val committedText = service.rimeEngine.commit()
+            if (committedText.isNotEmpty()) {
+                // 智能联想记录（对齐候选栏点选路径，以引擎实际返回文本为准）
+                if (SettingsPreferences.isSmartPredictionEnabled(service) && AssociationManager.isInitialized()) {
+                    if (service.predictionManager.lastCommittedText.isNotEmpty()) {
+                        val lastChar = service.predictionManager.lastCommittedText.last().toString()
+                        service.predictionManager.recordInputPair(lastChar, committedText)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    service.commitText(committedText)
+                    service.candidateState.value = service.candidateState.value.copy(
+                        inputText = "",
+                        preeditText = "",
+                        candidates = emptyList(),
+                        candidateComments = emptyList(),
+                        isComposing = false,
+                        hasNextPage = false,
+                        hasPrevPage = false,
+                        isShowingRecentClipboard = false,
+                        expandedCandidates = emptyList()
+                    )
+                }
+            } else {
+                // 引擎未产生 commit（选中后继续组句的多段场景）：刷新组合态
+                withContext(Dispatchers.Main) {
+                    service.updateUI()
+                }
+            }
+        }
+    }
+
+    /** 候选展开页长按删除自造词：按跨页全局索引删除，删除后重拉全量候选 */
+    internal fun deleteCandidateGlobal(globalIndex: Int) {
+        postRimeJob {
+            val text = service.candidateState.value.expandedCandidates.getOrNull(globalIndex)?.text
+            if (text.isNullOrEmpty()) return@postRimeJob
+            val ok = service.rimeEngine.deleteCandidateByGlobalIndex(globalIndex)
+            FileLogger.i(
+                "ImeKeyRouter",
+                "deleteCandidateGlobal: text='$text' index=$globalIndex ok=$ok"
+            )
+            if (!ok) return@postRimeJob
             withContext(Dispatchers.Main) {
                 service.updateUI()
             }

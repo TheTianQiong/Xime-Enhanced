@@ -99,6 +99,7 @@ import com.kingzcheung.xime.settings.SchemaManager
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.ui.keyboard.KeyboardView
 import com.kingzcheung.xime.ui.keyboard.isT9Schema
+import com.kingzcheung.xime.ui.keyboard.isHandwritingSchema
 import com.kingzcheung.xime.ui.theme.KeyboardThemes
 import com.kingzcheung.xime.ui.theme.keyboardBackground
 import kotlin.math.roundToInt
@@ -108,7 +109,6 @@ import com.kingzcheung.xime.util.FileLogger
 import com.kingzcheung.xime.util.PreeditMergeHelper
 import com.kingzcheung.xime.BuildConfig
 import com.kingzcheung.xime.keyboard.ActionExecutor
-import com.kingzcheung.xime.keyboard.HANDWRITING_SCHEMA_ID
 import com.kingzcheung.xime.keyboard.OverlayRoute
 import com.kingzcheung.xime.keyboard.ToolbarButtonItem
 import com.kingzcheung.xime.plugin.core.api.PluginResultItem
@@ -239,6 +239,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
      *  主线程写（onStartInput）、key-processing 线程读（英文联想短路），volatile 保证可见性。 */
     @Volatile
     private var editorRestricted: Boolean = false
+    /** 秘密输入框（密码/TYPE_NULL）：英文联想与回删替换的统一禁用线 */
+    private var editorSecret: Boolean = false
     private var floatingWinX = 100
     private var floatingWinY = 300
     
@@ -266,6 +268,38 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
             _viewModelStore,
             androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory(applicationContext as android.app.Application)
         ).get(KeyboardViewModel::class.java)
+    }
+
+    /** 候选展开页自动收起：候选与联想均空（编码删空）时收起在位展开页，不留空页。
+     *  在状态生产端调用（而非依赖 UI 重组观察）——候选变化时键盘区作用域被设计为跳过重组。 */
+    internal fun maybeCollapseCandidatePage() {
+        if (!keyboardViewModel.candidatePageExpanded.value) return
+        val cs = candidateState.value
+        if (cs.candidates.isEmpty() && cs.associationCandidates.isEmpty()) {
+            keyboardViewModel.setCandidatePageExpanded(false)
+        }
+    }
+
+    /** 刷新展开页的跨页全量候选；非展开态清空以省内存。编码变化与展开动作时调用 */
+    internal fun refreshExpandedCandidates() {
+        if (!keyboardViewModel.candidatePageExpanded.value) {
+            if (candidateState.value.expandedCandidates.isNotEmpty()) {
+                candidateState.value = candidateState.value.copy(expandedCandidates = emptyList())
+            }
+            return
+        }
+        val perfT0 = android.os.SystemClock.elapsedRealtime()
+        val all = rimeEngine.getAllCandidates().toList()
+        candidateState.value = candidateState.value.copy(expandedCandidates = all)
+        android.util.Log.d(
+            "CandidatePerf",
+            "refreshExpandedCandidates: count=${all.size} cost=${android.os.SystemClock.elapsedRealtime() - perfT0}ms"
+        )
+    }
+
+    /** 硬件键盘在展开态按 DPAD_DOWN/UP：展开页滚动一屏（经事件流驱动 UI） */
+    private fun expandedPageScroll(direction: Int) {
+        keyboardViewModel.requestExpandedPageScroll(direction)
     }
     
     internal val predictionManager = PredictionManager(
@@ -313,6 +347,10 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
 
     /** 语音会话真正完成（最终结果已提交/超时兜底/出错）后恢复键盘状态。幂等。 */
     internal fun restoreAfterVoiceFinish() {
+        // 兜底：会话结束的任何路径都确保录音已请求停止（幂等，正常松手路径
+        // recordingThread 已置空时直接返回）。UI 状态一旦清零，松手停止链就失效，
+        // 这里漏一次 stop 麦克风/引擎连接就会一直后台占用。
+        voiceRecognitionHandler.stopRecognition()
         keyboardViewModel.exitVoice()
         isTrackingVoiceButtons = false
         voiceRecordingStarted = false
@@ -347,11 +385,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     private fun loadDarkModePreference() {
         val isLandscape = resources.configuration.screenWidthDp > resources.configuration.screenHeightDp
         val isFloatingMode = SettingsPreferences.isFloatingMode(this, isLandscape)
-        SettingsPreferences.setFloatingMode(this, isFloatingMode, !isLandscape)
         val loadedX = SettingsPreferences.getFloatingOffsetX(this, isLandscape)
         val loadedY = SettingsPreferences.getFloatingOffsetY(this, isLandscape)
-        SettingsPreferences.setFloatingOffsetX(this, loadedX, !isLandscape)
-        SettingsPreferences.setFloatingOffsetY(this, loadedY, !isLandscape)
         val screenW = resources.configuration.screenWidthDp
         val screenH = resources.configuration.screenHeightDp
         val portraitWidth = minOf(screenW, screenH)
@@ -581,7 +616,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                     Log.d(TAG, "initRimeEngine: currentSchema=$currentSchema, savedSchema=$savedSchema, availableSchemas=${availableSchemas.joinToString()}")
                     
                     when {
-                        savedSchema == HANDWRITING_SCHEMA_ID -> {
+                        isHandwritingSchema(savedSchema) -> {
                             // 手写方案：不要调 rimeEngine.switchSchema（Rime 没有手写引擎），
                             // 也不要覆盖 savedSchema（由 onStartInput 恢复 UI）
                             Log.d(TAG, "initRimeEngine: savedSchema is handwriting, keeping current Rime schema")
@@ -1541,9 +1576,15 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
         if (hasHardwareKeyboard && candidateState.value.candidates.isNotEmpty()) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (keyboardViewModel.candidatePageExpanded.value) {
+                        expandedPageScroll(1); highlightIndex.intValue = 0; return true
+                    }
                     if (candidateState.value.hasNextPage) { keyRouter.pageDown(); highlightIndex.intValue = 0; return true }
                 }
                 KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (keyboardViewModel.candidatePageExpanded.value) {
+                        expandedPageScroll(-1); highlightIndex.intValue = 0; return true
+                    }
                     if (candidateState.value.hasPrevPage) { keyRouter.pageUp(); highlightIndex.intValue = 0; return true }
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -1632,6 +1673,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
 
         // 受限输入框判定（密码/终端/NO_SUGGESTIONS）：供英文联想等补全功能短路
         editorRestricted = EditorInfoClassifier.isRestrictedEditor(attribute)
+        // 秘密输入框判定（密码/终端，不含 NO_SUGGESTIONS）：英文联想/回删替换的禁用线
+        editorSecret = EditorInfoClassifier.isSecretEditor(attribute)
 
         // 输入 target 变化：旧编辑框的 composing 区域不再可达，复位标记。
         // 防御 stale 标记导致 endComposingInputBox 对新编辑框执行 setComposingText("")
@@ -1664,7 +1707,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                 
                 val actualSchema: String
                 when {
-                    savedSchema == HANDWRITING_SCHEMA_ID -> {
+                    isHandwritingSchema(savedSchema) -> {
                         debugLog("onStartInput: saved schema is handwriting, checking model files")
                         val hwDir = com.kingzcheung.xime.model.ModelStorage.getModelDir(this, "ochwpro")
                         com.kingzcheung.xime.model.ModelStorage.migrateLegacyForModel(this, "ochwpro")
@@ -2130,6 +2173,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
      * 英文联想等补全类功能应短路。
      */
     internal fun isEditorRestricted(): Boolean = editorRestricted
+
+    internal fun isSecretEditor(): Boolean = editorSecret
 
     /**
      * 当前宿主是否支持英文候选的"回删替换"机制。

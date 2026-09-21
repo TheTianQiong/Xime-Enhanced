@@ -217,7 +217,14 @@ fun SettingsScreen(
                 onNavigateToPrivacy = { navController.navigate(SettingsRoutes.Privacy) },
                 onNavigateToLicenses = { navController.navigate(SettingsRoutes.Licenses) },
                 onNavigateToLogViewer = { navController.navigate(SettingsRoutes.LogViewer) },
-                onNavigateToHandwritingCapture = { navController.navigate(SettingsRoutes.HandwritingCapture) }
+                onNavigateToHandwritingCapture = { navController.navigate(SettingsRoutes.HandwritingCapture) },
+                onNavigateToStorageSpace = { navController.navigate(SettingsRoutes.StorageSpace) }
+            )
+        }
+        composable(SettingsRoutes.StorageSpace) {
+            StorageSpaceScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToPlugins = { navController.navigate(SettingsRoutes.Plugins) }
             )
         }
         composable(SettingsRoutes.MarketModel) {

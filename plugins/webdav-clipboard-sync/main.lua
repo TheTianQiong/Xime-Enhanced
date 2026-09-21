@@ -32,6 +32,16 @@ local KEY_LAST_ETAG = "lastEtag"
 
 local CLIPBOARD_KEY = "clipboard/current.json"
 
+-- 503 限流退避（沙箱禁用 os 库无时钟，用调用计数近似时间窗口）：
+-- 坚果云等 WebDAV 服务限流（免费版每 30 分钟限 600 次请求，超限返回 503）
+-- 后需等待解封，解封前继续请求会延长封禁窗口。
+-- pull 经宿主节流后约 30s 一次，跳 20 次 ≈ 10 分钟退避；
+-- push 由剪贴板变化驱动（频率不定），跳 5 次后放行一次探测，仍 503 再退。
+local PULL_BACKOFF_SKIPS = 20
+local PUSH_BACKOFF_SKIPS = 5
+local pullSkipCount = 0
+local pushSkipCount = 0
+
 -- ================= 工具函数 =================
 
 local function basicAuthHeader(username, password)
@@ -171,6 +181,11 @@ end
 
 -- 推送本地 profile 到远端 WebDAV 文件（宿主剪贴板变化时调用）
 function plugin.push(profile)
+    if pushSkipCount > 0 then
+        pushSkipCount = pushSkipCount - 1
+        host.log("push: 限流退避中，跳过（剩余 " .. pushSkipCount .. " 次）")
+        return false
+    end
     local url = fileUrl()
     if url == nil then
         host.logError("push failed: 未配置服务器地址")
@@ -186,6 +201,12 @@ function plugin.push(profile)
     local resp = host.http.request("PUT", url, headers, body)
     if resp == nil then
         host.logError("push failed: 请求失败 " .. (host.http.lastError() or ""))
+        return false
+    end
+    if resp.status == 503 then
+        -- 服务器限流：进入退避，解封前不再发请求（避免延长封禁）
+        pushSkipCount = PUSH_BACKOFF_SKIPS
+        host.logError("push failed: HTTP 503 服务器限流，跳过接下来 " .. PUSH_BACKOFF_SKIPS .. " 次推送")
         return false
     end
     if resp.status >= 200 and resp.status < 300 then
@@ -216,6 +237,11 @@ end
 
 -- 拉取远端 profile（宿主轮询调用）；无变更/无文件返回 nil
 function plugin.pull()
+    if pullSkipCount > 0 then
+        pullSkipCount = pullSkipCount - 1
+        host.log("pull: 限流退避中，跳过（剩余 " .. pullSkipCount .. " 次）")
+        return nil
+    end
     local url = fileUrl()
     if url == nil then
         host.log("pull: 未配置服务器地址")
@@ -263,6 +289,12 @@ function plugin.pull()
             source = nil,
         }
     end
+    if resp.status == 503 then
+        -- 服务器限流：同步轮询（pull/push）已把请求额度用尽，此处不再立即重试
+        pullSkipCount = PULL_BACKOFF_SKIPS
+        host.logError("pull failed: HTTP 503 服务器限流，跳过接下来 " .. PULL_BACKOFF_SKIPS .. " 次拉取")
+        return nil
+    end
     host.logError("pull failed: GET " .. url .. " -> HTTP " .. resp.status)
     return nil
 end
@@ -280,6 +312,11 @@ function plugin.testConnection()
     end
     if resp.status == 401 or resp.status == 403 then
         return "认证失败（HTTP " .. resp.status .. "）"
+    end
+    -- 503 通常是限流而非配置错误：明确告知用户原因与等待建议，避免误改配置
+    if resp.status == 503 then
+        return "服务器限流（HTTP 503）：请求过于频繁。坚果云免费版每 30 分钟限 600 次请求，" ..
+            "请等待几分钟后再试"
     end
     -- 207 Multi-Status / 2xx / 404（目录尚不存在，可创建）均视为连接成功
     if resp.status >= 200 and resp.status < 300 or resp.status == 404 or resp.status == 405 then

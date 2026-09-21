@@ -316,6 +316,23 @@ class RimeEngine {
         }
     }
 
+    /**
+     * 跨页获取整个候选列表（与引擎分页无关），供候选展开页本地分页使用。
+     * @param maxCount 收集上限，防御超大列表
+     */
+    fun getAllCandidates(maxCount: Int = 500): Array<RimeCandidate> {
+        return tryLocked(emptyArray()) {
+            if (!nativeHasSession()) return@tryLocked emptyArray()
+            val rawCandidates = nativeGetAllCandidates(maxCount) ?: emptyArray()
+            rawCandidates.map { pair ->
+                RimeCandidate(
+                    text = pair.getOrElse(0) { "" },
+                    comment = pair.getOrElse(1) { "" }
+                )
+            }.toTypedArray()
+        }
+    }
+
     fun getInput(): String {
         return tryLocked("") {
             nativeGetInput() ?: ""
@@ -342,6 +359,17 @@ class RimeEngine {
     }
 
     /**
+     * 按候选列表全局索引选词（跨页，与 getAllCandidates 遍历顺序一致）。
+     * 候选展开页本地分页点选走此接口：本地页内索引 + 页偏移 = 全局索引。
+     */
+    fun selectCandidateByGlobalIndex(index: Int): Boolean {
+        return tryLocked(false) {
+            if (!nativeHasSession()) return@tryLocked false
+            nativeSelectCandidateByGlobalIndex(index)
+        }
+    }
+
+    /**
      * 删除当前页候选（长按候选栏删除自造词）。
      * 标准 C API delete_candidate_on_current_page：librime 对用户词典词条
      * 执行 tombstone 标记（UpdateEntry -1），键盘无关（T9/全键盘通用）。
@@ -351,6 +379,17 @@ class RimeEngine {
         return tryLocked(false) {
             if (!nativeHasSession()) return@tryLocked false
             nativeDeleteCandidateOnCurrentPage(index)
+        }
+    }
+
+    /**
+     * 按候选列表全局索引删除（跨页，与 getAllCandidates 遍历顺序一致），
+     * 供候选展开页本地分页长按删除自造词。
+     */
+    fun deleteCandidateByGlobalIndex(index: Int): Boolean {
+        return tryLocked(false) {
+            if (!nativeHasSession()) return@tryLocked false
+            nativeDeleteCandidateByGlobalIndex(index)
         }
     }
 
@@ -657,10 +696,13 @@ class RimeEngine {
     private external fun nativeGetProcessResult(processed: Boolean): RimeProcessResult
     private external fun nativeGetCandidates(): Array<String>?
     private external fun nativeGetCandidatesWithComments(): Array<Array<String>>?
+    private external fun nativeGetAllCandidates(maxCount: Int): Array<Array<String>>?
     private external fun nativeGetInput(): String?
     private external fun nativeGetComposition(): RimeComposition
     private external fun nativeSelectCandidate(index: Int): Boolean
+    private external fun nativeSelectCandidateByGlobalIndex(index: Int): Boolean
     private external fun nativeDeleteCandidateOnCurrentPage(index: Int): Boolean
+    private external fun nativeDeleteCandidateByGlobalIndex(index: Int): Boolean
     private external fun nativePageDown(): Boolean
     private external fun nativePageUp(): Boolean
     private external fun nativeHasNextPage(): Boolean

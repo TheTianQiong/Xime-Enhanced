@@ -31,6 +31,7 @@ import androidx.compose.material.icons.twotone.Code
 import androidx.compose.material.icons.twotone.Description
 import androidx.compose.material.icons.twotone.PersonOutline
 import androidx.compose.material.icons.twotone.PrivacyTip
+import androidx.compose.material.icons.twotone.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,6 +137,7 @@ fun AboutContent(
     onNavigateToLicenses: () -> Unit,
     onNavigateToLogViewer: () -> Unit = {},
     onNavigateToHandwritingCapture: () -> Unit = {},
+    onNavigateToStorageSpace: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
@@ -416,6 +418,16 @@ fun AboutContent(
                             icon = Icons.TwoTone.BugReport,
                             title = "日志查看器",
                             onClick = onNavigateToLogViewer
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 72.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        SettingsItem(
+                            icon = Icons.TwoTone.Storage,
+                            title = "存储空间",
+                            onClick = onNavigateToStorageSpace
                         )
                         if (captureUnlocked) {
                             HorizontalDivider(

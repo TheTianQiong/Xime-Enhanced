@@ -7,7 +7,7 @@ import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import com.kingzcheung.xime.MainActivity
-import com.kingzcheung.xime.keyboard.HANDWRITING_SCHEMA_ID
+import com.kingzcheung.xime.ui.keyboard.isHandwritingSchema
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SchemaConfigHelper
 import com.kingzcheung.xime.settings.SchemaManager
@@ -268,7 +268,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
     }
 
     internal fun switchSchema(schemaId: String) {
-        if (schemaId == HANDWRITING_SCHEMA_ID) {
+        if (isHandwritingSchema(schemaId)) {
             // 检查手写模型文件是否已下载
             if (!com.kingzcheung.xime.handwriting.HandwritingEngine.hasModel(service)) {
                 FileLogger.w(XimeInputMethodService.TAG, "Handwriting model not found, redirecting to download")
@@ -392,7 +392,6 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
     internal fun toggleFloatingMode(enabled: Boolean, navBarDp: Int = 0) {
         val isLandscape = service.resources.configuration.screenWidthDp > service.resources.configuration.screenHeightDp
         SettingsPreferences.setFloatingMode(service, enabled, isLandscape)
-        SettingsPreferences.setFloatingMode(service, enabled, !isLandscape)
         val loadedX = SettingsPreferences.getFloatingOffsetX(service, isLandscape)
         val loadedY = SettingsPreferences.getFloatingOffsetY(service, isLandscape)
         val screenW = service.resources.configuration.screenWidthDp

@@ -36,6 +36,13 @@ class ClipboardSyncBridge(
     companion object {
         private const val TAG = "ClipboardSync"
         private const val PUSH_RETRY_BACKOFF_MS = 5_000L
+
+        /**
+         * 拉取最小间隔：键盘每次显示都会触发 [pullOnce]，高频切换时请求数会轻易
+         * 超出 WebDAV 服务的限流阈值（坚果云免费版每 30 分钟仅允许 600 次请求，
+         * 超限返回 503 且需等待解封），必须节流。
+         */
+        private const val PULL_MIN_INTERVAL_MS = 30_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -54,6 +61,10 @@ class ClipboardSyncBridge(
     /** 推送失败后的退避截止时间。 */
     @Volatile
     private var retryUntil = 0L
+
+    /** 上次真正发起拉取的时间（pullOnce 节流基准）。 */
+    @Volatile
+    private var lastPullAt = 0L
 
     private var collectJob: Job? = null
 
@@ -75,8 +86,11 @@ class ClipboardSyncBridge(
             }
             .launchIn(scope)
 
-        // 2. 启动即拉取一次；后续由键盘显示时 pullOnce() 触发
-        scope.launch { pullRemote() }
+        // 2. 启动即拉取一次（不受节流限制）；后续由键盘显示时 pullOnce() 触发
+        scope.launch {
+            lastPullAt = System.currentTimeMillis()
+            pullRemote()
+        }
     }
 
     fun stop() {
@@ -92,9 +106,15 @@ class ClipboardSyncBridge(
         scope.cancel()
     }
 
-    /** 键盘显示时触发一次拉取。 */
+    /** 键盘显示时触发一次拉取；节流：间隔内的触发直接跳过，不发起请求。 */
     fun pullOnce() {
         if (!running) return
+        val now = System.currentTimeMillis()
+        if (now - lastPullAt < PULL_MIN_INTERVAL_MS) {
+            Log.d(TAG, "Pull throttled (min interval ${PULL_MIN_INTERVAL_MS / 1000}s)")
+            return
+        }
+        lastPullAt = now
         scope.launch {
             pullRemote()
         }
