@@ -78,6 +78,9 @@ class JsScriptRuntime(
     private val sseHostApi: SseHostApi? = null,
     private val quickSendHostApi: QuickSendHostApi? = null,
     private val clipboardHostApi: ClipboardHostApi? = null,
+    /** 通用 AIDL/Binder 桥（外部语音服务联动，见 [com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi]）；
+     *  null 时不注入 `host.ipc`。 */
+    private val ipcHostApi: com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostApi? = null,
     /** speech 型插件才注入 `host.asr` 上行表（emitFinal/emitPartial/...）；
      *  非 speech 型不注入，保持"未声明的 API 不存在"的横切门禁口径。 */
     private val injectAsr: Boolean = false,
@@ -319,6 +322,10 @@ class JsScriptRuntime(
                 injectedCapabilities.add("clipboard")
                 define("clipboard") { buildClipboardTable() }
             }
+            if (ipcHostApi != null) {
+                injectedCapabilities.add("ipc")
+                define("ipc") { buildIpcTable() }
+            }
         }
 
         // 引导作用域：宿主内部 helper（不属于插件 API 面，插件不应直接调用）
@@ -540,6 +547,19 @@ class JsScriptRuntime(
                   }
                 }
               })();
+
+              // ---- host.ipc.connect：回调对象保存 ----
+              // 宿主 Kotlin 桥无法持有 JS 函数引用（JsFunction 仅含 name/isAsync，不可调用），
+              // 故 connect 把回调对象存入宿主内部槽，事件到达时由宿主以表达式读取并调用对应函数。
+              if (globalThis.host.ipc &&
+                  typeof globalThis.host.ipc['${JsPluginContract.BRIDGE_PREFIX}connect'] === 'function') {
+                var rawIpcConnect = globalThis.host.ipc['${JsPluginContract.BRIDGE_PREFIX}connect'];
+                globalThis.host.ipc.connect = function (callbacks) {
+                  globalThis.$BOOTSTRAP_SCOPE.ipcCallbacks =
+                    (callbacks && typeof callbacks === 'object') ? callbacks : null;
+                  return rawIpcConnect(callbacks);
+                };
+              }
             })();
         """.trimIndent()
         try {
@@ -890,6 +910,88 @@ class JsScriptRuntime(
     private fun ObjectBindingScope.buildClipboardTable() {
         function("get") { _ ->
             clipboardHostApi?.getText()?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * 通用 AIDL/Binder 桥（`host.ipc`，外部语音服务联动，见 IpcHostApi）。
+     *
+     * connect 的回调对象由 bootstrap wrapper 存入宿主内部槽（Kotlin 桥无法持有 JS 函数引用），
+     * 原生桥 __connect 只负责发起绑定并注册 [ipcListener]；其余方法为同步原语，直接映射宿主 API。
+     */
+    private fun ObjectBindingScope.buildIpcTable() {
+        // 绑定外部语音服务并注册事件监听；回调对象经 bootstrap wrapper 落地到内部槽
+        function(bridgeName("connect")) { _ ->
+            ipcHostApi?.connect(ipcListener) ?: false
+        }
+
+        // 阻塞等待绑定并启动推送 PCM 会话；返回 sessionId(>0) 或错误码（-2/-3/-5/-100~-102）
+        function("startPcmSession") { _ -> ipcHostApi?.startPcmSession() ?: 0 }
+
+        // 推送一帧 PCM：二进制按 Uint8Array 约定传入，经 bytes() 还原为 ByteArray
+        function("writePcm") { args ->
+            val sid = num(args, 0).toInt()
+            val pcm = bytes(args, 1)
+            val rate = num(args, 2).toInt()
+            val ch = num(args, 3).toInt()
+            if (pcm != null) ipcHostApi?.writePcm(sid, pcm, rate, ch)
+            null
+        }
+
+        // 结束音频输入进入处理阶段，等待最终结果（等价于 stopSession）
+        function("finishPcm") { args -> ipcHostApi?.finishPcm(num(args, 0).toInt()); null }
+
+        // 取消并清理会话
+        function("cancelSession") { args -> ipcHostApi?.cancelSession(num(args, 0).toInt()); null }
+
+        // 指定会话 / 任意会话是否在录音
+        function("isRecording") { args -> ipcHostApi?.isRecording(num(args, 0).toInt()) ?: false }
+        function("isAnyRecording") { _ -> ipcHostApi?.isAnyRecording() ?: false }
+
+        // 外部服务版本名（如 "1.6.0"）
+        function("getVersion") { _ -> ipcHostApi?.getVersion() }
+
+        // 绑定状态：0=IDLE 1=CONNECTING 2=BOUND 3=CLOSED
+        function("getState") { _ -> ipcHostApi?.getState() ?: 0 }
+
+        // 最近一次拒绝/失败原因（connect 返回 false 或 startPcmSession 返回负数时读取）
+        function("lastError") { _ -> ipcHostApi?.lastError() }
+
+        // 解绑并清理（插件 onUnload 时调用，幂等）
+        function("close") { _ -> ipcHostApi?.close(); null }
+    }
+
+    /** 通用 AIDL/Binder 桥（host.ipc）事件监听：Java 回调转发到脚本 connect 注册的函数。 */
+    private val ipcListener = object : com.kingzcheung.xime.plugin.core.lua.ipc.IpcHostListener {
+        override fun onState(sessionId: Int, state: Int, message: String) =
+            dispatchIpcCallback("onState", listOf(sessionId, state, message))
+
+        override fun onPartial(sessionId: Int, text: String) =
+            dispatchIpcCallback("onPartial", listOf(sessionId, text))
+
+        override fun onFinal(sessionId: Int, text: String) =
+            dispatchIpcCallback("onFinal", listOf(sessionId, text))
+
+        override fun onError(sessionId: Int, code: Int, message: String) =
+            dispatchIpcCallback("onError", listOf(sessionId, code, message))
+
+        override fun onAmplitude(sessionId: Int, amplitude: Float) =
+            dispatchIpcCallback("onAmplitude", listOf(sessionId, amplitude))
+    }
+
+    /** 投递 host.ipc 事件到脚本 connect 注册的回调对象（短超时，不中毒）。 */
+    private fun dispatchIpcCallback(name: String, args: List<Any?>) {
+        if (!loaded || poisoned) return
+        val argsJs = args.joinToString(",") { kotlinToJsExpr(it) }
+        val expr = "(function(){var cb=globalThis.$BOOTSTRAP_SCOPE.ipcCallbacks;" +
+            " if(cb && typeof cb.$name === 'function'){cb.$name($argsJs);}})()"
+        try {
+            runGuarded(callbackTimeoutMs, poisonOnTimeout = false) {
+                runBlocking { engine.evaluate<Any?>(expr, filename = entryScript) }
+            }
+        } catch (e: Exception) {
+            api.log("ipc.$name 回调失败: ${e.message}")
+            logScriptError("ipc.$name 回调", e)
         }
     }
 
@@ -1298,6 +1400,11 @@ class JsScriptRuntime(
             subscribedEvents = emptySet()
             activeSseSessions.forEach { sseHostApi?.close(it) }
             activeSseSessions.clear()
+            // 解绑外部 AIDL 服务并丢弃脚本回调对象（引擎关闭后槽随上下文销毁，无需显式清空）
+            try {
+                ipcHostApi?.close()
+            } catch (_: Exception) {
+            }
             try {
                 engine.close()
             } catch (_: Exception) {
