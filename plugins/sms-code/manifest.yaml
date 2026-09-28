@@ -16,5 +16,9 @@ version: 0.1.0
 type: unknown
 entry: main.lua
 
+# 声明需要的 Android 权限（仅供「管理权限」页展示「哪些插件需要它」，不构成授权）
+permissions:
+  - RECEIVE_SMS
+
 # 宿主最低版本要求
 minHostVersion: 2.7.2

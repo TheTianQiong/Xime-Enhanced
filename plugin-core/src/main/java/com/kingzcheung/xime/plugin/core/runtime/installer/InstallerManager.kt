@@ -33,7 +33,8 @@ internal data class PluginConfig(
     val allowCustomHosts: Boolean = false,
     val toolbarButtons: List<PluginToolbarButton> = emptyList(),
     val icon: String? = null,
-    val capabilities: com.kingzcheung.xime.plugin.core.model.PluginCapabilities? = null
+    val capabilities: com.kingzcheung.xime.plugin.core.model.PluginCapabilities? = null,
+    val permissions: List<String> = emptyList()
 )
 
 /** manifest.yaml 的类型化模型，与宿主一起用 kaml 解析。 */
@@ -51,7 +52,14 @@ internal data class PluginManifest(
     val toolbarButtons: List<ToolbarButtonConfig> = emptyList(),
     /** 顶层 icon：文字（如 "译"）或 resources/ 下图片文件名。 */
     val icon: String? = null,
-    val capabilities: CapabilitiesConfig? = null
+    val capabilities: CapabilitiesConfig? = null,
+    /**
+     * 插件声明需要的 Android 权限（如 `RECEIVE_SMS` 或全名
+     * `android.permission.RECEIVE_SMS`）。仅作声明用途：
+     * 宿主「管理权限」页据此展示「哪些插件需要该权限」，
+     * **不会**因声明而自动获得授权——运行时权限始终由用户显式授予。
+     */
+    val permissions: List<String> = emptyList()
 )
 
 @Serializable
@@ -264,7 +272,11 @@ class InstallerManager(
                     allowCustomHosts = manifest.network?.allowCustomHosts ?: false,
                     toolbarButtons = toolbarButtons,
                     icon = manifest.icon?.takeIf { it.isNotBlank() },
-                    capabilities = manifest.capabilities?.toModel()
+                    capabilities = manifest.capabilities?.toModel(),
+                    permissions = manifest.permissions
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
                 )
             )
         } catch (e: Exception) {
@@ -379,7 +391,8 @@ class InstallerManager(
                 allowCustomHosts = pluginConfig.allowCustomHosts,
                 toolbarButtons = pluginConfig.toolbarButtons,
                 manifestIcon = pluginConfig.icon,
-                capabilities = pluginConfig.capabilities
+                capabilities = pluginConfig.capabilities,
+                declaredPermissions = pluginConfig.permissions
             )
 
             if (existingPlugin != null) {

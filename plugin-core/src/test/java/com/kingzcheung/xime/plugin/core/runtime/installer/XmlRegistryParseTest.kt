@@ -121,4 +121,56 @@ class XmlRegistryParseTest {
         val button = XmlManager.parsePluginsXmlContent(xml).single().toolbarButtons.single()
         assertEquals("AI & 翻译", button.label)
     }
+
+    // ── permissions 节点往返 ──
+
+    @Test
+    fun `permissions 节点被解析`() {
+        val xml = """
+            <plugins>
+              <plugin>
+                <id>com.kingzcheung.xime.plugin.sms_code</id>
+                <name>短信验证码</name>
+                <path>/p/main.lua</path>
+                <permissions>RECEIVE_SMS,android.permission.RECORD_AUDIO</permissions>
+              </plugin>
+            </plugins>
+        """.trimIndent()
+
+        val plugin = XmlManager.parsePluginsXmlContent(xml).single()
+
+        assertEquals(
+            listOf("RECEIVE_SMS", "android.permission.RECORD_AUDIO"),
+            plugin.declaredPermissions,
+        )
+    }
+
+    @Test
+    fun `permissions 节点缺省时为空列表`() {
+        val xml = """
+            <plugins>
+              <plugin>
+                <id>demo</id>
+                <path>/p/main.lua</path>
+              </plugin>
+            </plugins>
+        """.trimIndent()
+
+        assertTrue(XmlManager.parsePluginsXmlContent(xml).single().declaredPermissions.isEmpty())
+    }
+
+    @Test
+    fun `permissions 节点忽略空段`() {
+        val xml = """
+            <plugins>
+              <plugin>
+                <id>demo</id>
+                <path>/p/main.lua</path>
+                <permissions>RECEIVE_SMS, ,  ,</permissions>
+              </plugin>
+            </plugins>
+        """.trimIndent()
+
+        assertEquals(listOf("RECEIVE_SMS"), XmlManager.parsePluginsXmlContent(xml).single().declaredPermissions)
+    }
 }

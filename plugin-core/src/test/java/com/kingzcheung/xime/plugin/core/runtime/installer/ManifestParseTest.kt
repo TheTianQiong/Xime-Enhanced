@@ -273,4 +273,72 @@ class ManifestParseTest {
         assertTrue("反斜杠非法", !InstallerManager.isValidResourcePath("..\\xime.yaml"))
         assertTrue("空段非法", !InstallerManager.isValidResourcePath("icons//x.png"))
     }
+
+    // ── manifest.permissions 声明 ──
+
+    @Test
+    fun `permissions 声明被解析`() {
+        val content = """
+            id: sms
+            type: unknown
+            permissions:
+              - RECEIVE_SMS
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+
+        assertEquals(listOf("RECEIVE_SMS"), config.permissions)
+    }
+
+    @Test
+    fun `permissions 缺省时为空列表`() {
+        val config = (InstallerManager.parseManifestContent("id: mini") as PluginParseResult.Success).config
+
+        assertTrue("未声明时应为空", config.permissions.isEmpty())
+    }
+
+    @Test
+    fun `permissions 去除空白与重复项`() {
+        val content = """
+            id: dup
+            permissions:
+              - "  RECEIVE_SMS  "
+              - android.permission.RECEIVE_SMS
+              - RECEIVE_SMS
+        """.trimIndent()
+
+        val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
+
+        // 短名与全名是不同的字符串，各自保留；完全相同的项被去重
+        assertEquals(
+            listOf("RECEIVE_SMS", "android.permission.RECEIVE_SMS"),
+            config.permissions,
+        )
+    }
+
+    /**
+     * 守护全部内置插件的 manifest 均可被当前 schema 解析：
+     * 新增/重命名字段时若与某个 manifest 冲突（如 strict 模式下的未知字段），
+     * 此测试会失败，避免运行期静默加载失败。
+     */
+    @Test
+    fun `全部内置插件 manifest 均可解析`() {
+        val pluginsDir = java.io.File("../plugins")
+        assertTrue("插件目录应存在: ${pluginsDir.absolutePath}", pluginsDir.isDirectory)
+
+        val manifests = pluginsDir.listFiles()
+            .orEmpty()
+            .map { java.io.File(it, "manifest.yaml") }
+            .filter { it.isFile }
+
+        assertTrue("应至少找到一个内置插件 manifest", manifests.isNotEmpty())
+        manifests.forEach { file ->
+            val result = InstallerManager.parseManifestContent(file.readText())
+            assertTrue(
+                "${file.parentFile.name}/manifest.yaml 解析失败: " +
+                    (result as? PluginParseResult.Failure)?.reason,
+                result is PluginParseResult.Success,
+            )
+        }
+    }
 }

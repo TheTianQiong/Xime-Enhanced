@@ -41,6 +41,12 @@ data class PluginInfo(
     val manifestIcon: String? = null,
     /** manifest.capabilities 能力声明（emoji/speech/tool/clipboard_sync 各类型）。宿主消费能力的唯一来源。 */
     val capabilities: PluginCapabilities? = null,
+    /**
+     * manifest.permissions 声明的 Android 权限（可能为短名 `RECEIVE_SMS` 或全名
+     * `android.permission.RECEIVE_SMS`）。仅用于宿主「管理权限」页展示
+     * 「哪些插件需要该权限」，不构成授权。
+     */
+    val declaredPermissions: List<String> = emptyList(),
 ) {
     val version: String get() = versionName
     val category: PluginCategory get() = PluginCategory.fromId(type)

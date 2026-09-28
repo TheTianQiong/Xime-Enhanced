@@ -54,6 +54,11 @@ class XmlManager(private val context: Application) {
                 val capabilities = extractTag(pluginContent, "capabilities")
                     ?.takeIf { it.isNotBlank() }
                     ?.let { decodeCapabilities(unescapeXml(it)) }
+                val declaredPermissions = extractTag(pluginContent, "permissions")
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList()
 
                 if (id != null && path != null) {
                     result.add(
@@ -77,7 +82,8 @@ class XmlManager(private val context: Application) {
                             allowCustomHosts = allowCustomHosts,
                             toolbarButtons = toolbarButtons,
                             manifestIcon = manifestIcon,
-                            capabilities = capabilities
+                            capabilities = capabilities,
+                            declaredPermissions = declaredPermissions
                         )
                     )
                 }
@@ -293,6 +299,9 @@ class XmlManager(private val context: Application) {
                     }
                     if (plugin.capabilities != null) {
                         writer.write("    <capabilities>${escapeXml(encodeCapabilities(plugin.capabilities))}</capabilities>\n")
+                    }
+                    if (plugin.declaredPermissions.isNotEmpty()) {
+                        writer.write("    <permissions>${escapeXml(plugin.declaredPermissions.joinToString(","))}</permissions>\n")
                     }
                     writer.write("  </plugin>\n")
                 }

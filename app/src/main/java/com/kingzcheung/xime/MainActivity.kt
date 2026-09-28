@@ -87,6 +87,11 @@ class MainActivity : ComponentActivity() {
     private fun permissionLabel(permission: String): String = when (permission) {
         PermissionHelper.PERMISSION_RECORD_AUDIO -> "麦克风"
         PermissionHelper.PERMISSION_RECEIVE_SMS -> "短信"
+        PermissionHelper.PERMISSION_VIBRATE -> "震动"
+        PermissionHelper.PERMISSION_INTERNET -> "网络访问"
+        PermissionHelper.PERMISSION_ACCESS_NETWORK_STATE -> "网络状态"
+        PermissionHelper.PERMISSION_ACCESS_WIFI_STATE -> "WLAN 状态"
+        PermissionHelper.PERMISSION_WAKE_LOCK -> "唤醒锁"
         else -> "该"
     }
 
