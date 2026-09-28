@@ -20,7 +20,8 @@ class PredictionManager(
 ) {
     companion object {
         private const val TAG = "PredictionManager"
-        private const val MAX_CONTEXT_LENGTH = 25
+        /** 联想上下文上限（字符）：已上屏文本与输入框前文都按此截尾。 */
+        internal const val MAX_CONTEXT_LENGTH = 25
         const val MAX_ASSOCIATION_COUNT = 20
     }
     
@@ -99,6 +100,17 @@ class PredictionManager(
         }
     }
     
+    /**
+     * 清空联想候选（环境不适配时不推理）。
+     *
+     * 同时消费抑制标志：单次联想模式下，上屏路径会先置位抑制标志再 commitText，
+     * 若此处直接跳过推理而不消费，标志会悬挂并吞掉下一次真实输入的首轮推理。
+     */
+    fun clearAssociation() {
+        suppressNextPrediction = false
+        onPredictionResult(emptyList())
+    }
+
     fun getPrediction(contextText: String) {
         // 单次联想：消费抑制标志——联想上屏引发的本轮推理不执行，回调空结果清空候选栏
         if (suppressNextPrediction) {

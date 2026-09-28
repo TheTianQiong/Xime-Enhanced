@@ -241,6 +241,10 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     private var editorRestricted: Boolean = false
     /** 秘密输入框（密码/TYPE_NULL）：英文联想与回删替换的统一禁用线 */
     private var editorSecret: Boolean = false
+    /** 当前输入框的背景环境（宿主应用 + 输入框类型），智能联想据此自适应匹配。
+     *  主线程写（onStartInput）、key-processing 线程读，volatile 保证可见性。 */
+    @Volatile
+    private var editorEnvironment: EditorEnvironment = EditorEnvironment.UNKNOWN
     private var floatingWinX = 100
     private var floatingWinY = 300
     
@@ -548,6 +552,34 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     
     private fun getPredictionFromPlugin(contextText: String) {
         predictionManager.getPrediction(contextText)
+    }
+
+    /**
+     * 环境自适应的联想请求（需在主线程调用）。
+     *
+     * 1. **环境门禁**：当前输入框类型不适配中文联想（密码/终端、数字/电话/日期、
+     *    邮箱/网址）时直接清空候选，不推理也不读输入框内容；
+     * 2. **自适应上下文**：优先取输入框光标前文本——它包含已上屏文本以及宿主
+     *    预填的内容（如回复邮件时引用的原文），比只用本输入法累计上屏的文本
+     *    信息更充分；读不到（如宿主未实现）时回退已上屏文本。
+     */
+    private fun requestAdaptivePrediction() {
+        val environment = editorEnvironment
+        if (!environment.associationAllowed) {
+            predictionManager.clearAssociation()
+            return
+        }
+        val fieldText = runCatching {
+            currentInputConnection
+                ?.getTextBeforeCursor(PredictionManager.MAX_CONTEXT_LENGTH, 0)
+                ?.toString()
+        }.getOrNull()
+        val contextText = EditorEnvironment.adaptiveContext(
+            committedText = predictionManager.lastCommittedText,
+            fieldTextBeforeCursor = fieldText,
+            maxLength = PredictionManager.MAX_CONTEXT_LENGTH,
+        )
+        getPredictionFromPlugin(contextText)
     }
     
     private fun initRimeEngine() {
@@ -1675,6 +1707,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
         editorRestricted = EditorInfoClassifier.isRestrictedEditor(attribute)
         // 秘密输入框判定（密码/终端，不含 NO_SUGGESTIONS）：英文联想/回删替换的禁用线
         editorSecret = EditorInfoClassifier.isSecretEditor(attribute)
+        // 背景环境收集（宿主应用 + 输入框类型）：供智能联想自适应匹配
+        editorEnvironment = EditorEnvironment.from(attribute)
 
         // 输入 target 变化：旧编辑框的 composing 区域不再可达，复位标记。
         // 防御 stale 标记导致 endComposingInputBox 对新编辑框执行 setComposingText("")
@@ -2383,7 +2417,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
         if (isChineseMode) {
             mainHandler.post {
                 if (!uiState.value.isAsciiMode) {
-                    getPredictionFromPlugin(predictionManager.lastCommittedText)
+                    requestAdaptivePrediction()
                 }
             }
         }
@@ -2468,7 +2502,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
         if (!isChineseMode) return
         mainHandler.post {
             if (!uiState.value.isAsciiMode) {
-                getPredictionFromPlugin(predictionManager.lastCommittedText)
+                requestAdaptivePrediction()
             }
         }
     }
