@@ -90,9 +90,13 @@ class XimeApplication : Application(), ImageLoaderFactory {
         }
         PluginManager.initialize(this) {
             if (isDebug) {
+                // 调试构建：每次启动强制覆盖，便于迭代插件
                 PluginManager.installPluginsFromAssetsForDebug("plugins")
+            } else {
+                // 正式构建：内置插件按版本静默安装/升级，不覆盖用户已装版本与配置
+                PluginManager.installBundledPlugins("plugins")
             }
-            
+
             PluginManager.loadEnabledPlugins()
         }
         

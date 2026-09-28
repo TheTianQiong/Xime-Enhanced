@@ -12,6 +12,11 @@ plugins {
 
 apply(from = "build-logic/tasks-native.gradle.kts")
 apply(from = "build-logic/tasks-plugin-dev.gradle.kts")
+apply(from = "build-logic/tasks-bundled-plugins.gradle.kts")
+
+/** 内置插件 xipk 的生成目录（与 tasks-bundled-plugins.gradle.kts 的约定一致）。 */
+val bundledPluginsAssetsPath: String =
+    layout.buildDirectory.dir("generated/bundledPlugins").get().asFile.absolutePath
 
 // 获取 Git 提交哈希
 fun getGitHash(): String {
@@ -144,6 +149,13 @@ android {
     sourceSets {
         getByName("test") {
             resources.srcDirs("src/main/assets")
+        }
+        // 内置插件：由 build-logic/tasks-bundled-plugins.gradle.kts 的
+        // packageBundledPlugins 任务把 plugins/ 全部打成 xipk 输出到此目录，
+        // 使 debug 与 release 构建都内置全部插件（不再手工提交 xipk 二进制）。
+        // 注意：AGP 不允许向 assets 传 Provider，此处用静态路径字符串。
+        getByName("main") {
+            assets.srcDir(bundledPluginsAssetsPath)
         }
     }
     lint {

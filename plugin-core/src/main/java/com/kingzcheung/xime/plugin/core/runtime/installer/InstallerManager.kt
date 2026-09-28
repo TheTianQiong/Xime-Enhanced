@@ -200,6 +200,25 @@ class InstallerManager(
         private const val MAX_ARCHIVE_ENTRIES = 512
         private const val MAX_ARCHIVE_TOTAL_BYTES = 64 * 1024 * 1024
 
+        /**
+         * 由「内置版本」与「已安装版本」决定安装动作（纯函数）。
+         *
+         * 内置插件随应用每次启动都会尝试安装，因此这里必须是非破坏性的：
+         * 只有版本严格更高才覆盖，避免每次启动都把用户装过的插件重置回去。
+         *
+         * @param installedVersion 已安装版本；null 表示未安装
+         */
+        internal fun decideBundledInstall(
+            bundledVersion: String,
+            installedVersion: String?,
+        ): BundledInstallAction = when {
+            installedVersion == null -> BundledInstallAction.INSTALL
+            com.kingzcheung.xime.plugin.core.util.VersionUtil
+                .compare(bundledVersion, installedVersion) > 0 -> BundledInstallAction.UPGRADE
+
+            else -> BundledInstallAction.SKIP
+        }
+
         /** 插件 id 白名单：字母/数字/下划线/连字符，点号仅作命名空间分段（禁止 .. / 空段 / /），最长 64，杜绝路径穿越。 */
         private val PLUGIN_ID_REGEX = Regex("^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*$")
         private const val PLUGIN_ID_MAX_LENGTH = 64
@@ -421,6 +440,54 @@ class InstallerManager(
         xmlManager.removePlugin(pluginId)
         xmlManager.flushToDisk()
         true
+    }
+
+    /**
+     * 安装**内置插件**（随应用一起分发的 xipk）：按版本决定是否覆盖。
+     *
+     * 与 [installPlugin] 的差别在于覆盖策略——内置插件随主应用演进，
+     * 既要在版本更新时升级，又不能每次启动都覆盖（否则会重置插件状态）。
+     * 决策见 [decideBundledInstall]。
+     *
+     * 解析失败（包损坏/非法 id）时返回 Failure，不影响其它插件安装。
+     */
+    suspend fun installBundledPlugin(
+        pluginFile: File,
+        source: PluginSource = PluginSource.ASSET,
+    ): InstallResult = withContext(Dispatchers.IO) {
+        if (!pluginFile.exists()) {
+            return@withContext InstallResult.Failure("插件文件不存在")
+        }
+        val config = when (val parsed = parsePluginConfig(pluginFile)) {
+            is PluginParseResult.Failure -> return@withContext InstallResult.Failure(parsed.reason)
+            is PluginParseResult.Success -> parsed.config
+        }
+
+        val existing = xmlManager.getPluginById(config.id)
+        return@withContext when (decideBundledInstall(config.version, existing?.versionName)) {
+            BundledInstallAction.INSTALL ->
+                installPlugin(pluginFile, forceOverwrite = false, source = source)
+
+            BundledInstallAction.UPGRADE -> {
+                Log.i("InstallerManager", "内置插件 ${config.id} 升级 ${existing?.versionName} → ${config.version}")
+                installPlugin(pluginFile, forceOverwrite = true, source = source)
+            }
+
+            // 已是最新（或用户自行装了更高版本）：原样保留，不触碰磁盘
+            BundledInstallAction.SKIP -> InstallResult.Success(existing!!)
+        }
+    }
+
+    /** 内置插件的安装决策。 */
+    enum class BundledInstallAction {
+        /** 尚未安装 → 安装 */
+        INSTALL,
+
+        /** 内置版本更高 → 覆盖升级 */
+        UPGRADE,
+
+        /** 版本相同或更低 → 跳过（保留用户现有版本与配置） */
+        SKIP,
     }
 
     suspend fun installPluginFromUri(uri: Uri): InstallResult = withContext(Dispatchers.IO) {

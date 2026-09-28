@@ -246,6 +246,53 @@ object PluginManager {
         }
     }
 
+    /**
+     * 安装随应用一起分发的内置插件（assets 下 assetsDir 目录内的 xipk 包）。
+     *
+     * 覆盖策略交给 [InstallerManager.installBundledPlugin]：缺失则安装、
+     * 内置版本更高则升级、否则跳过——因此可安全地在每次启动时调用，
+     * 不会重置用户已装的插件与其配置。
+     *
+     * @return 本次实际安装或升级的插件数
+     */
+    suspend fun installBundledPlugins(assetsDir: String = "plugins"): Int {
+        val context = requireContext().application
+        try {
+            val assetFiles = context.assets.list(assetsDir)?.filter { it.endsWith(".xipk") }
+                ?: return 0
+            Log.d(TAG, "installBundledPlugins: 发现 ${assetFiles.size} 个内置插件于 assets/$assetsDir")
+
+            // 安装前后的 id→版本 快照，用于准确统计「新装 + 升级」数量
+            val before = getAllInstallPlugins().associate { it.id to it.versionName }
+
+            for (fileName in assetFiles) {
+                val tempFile = File(context.cacheDir, "bundled_$fileName")
+                try {
+                    context.assets.open("$assetsDir/$fileName").use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val result = installerManager.installBundledPlugin(
+                        tempFile,
+                        com.kingzcheung.xime.plugin.core.model.PluginSource.ASSET,
+                    )
+                    if (result is com.kingzcheung.xime.plugin.core.runtime.installer.InstallerManager.InstallResult.Failure) {
+                        Log.w(TAG, "内置插件安装失败 $fileName: ${result.reason}")
+                    }
+                } finally {
+                    tempFile.delete()
+                }
+            }
+
+            val after = getAllInstallPlugins().associate { it.id to it.versionName }
+            val changed = after.count { (id, version) -> before[id] != version }
+            Log.d(TAG, "installBundledPlugins: 新装/升级 $changed 个（共 ${after.size} 个已安装）")
+            return changed
+        } catch (e: Exception) {
+            Log.e(TAG, "installBundledPlugins failed", e)
+            return 0
+        }
+    }
+
     suspend fun installPluginsFromAssetsForDebug(assetsDir: String = "plugins"): Int {
         Log.d(TAG, "installPluginsFromAssetsForDebug: $assetsDir")
         val context = requireContext().application
