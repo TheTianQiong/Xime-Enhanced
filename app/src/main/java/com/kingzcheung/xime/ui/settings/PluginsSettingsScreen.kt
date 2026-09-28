@@ -60,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -548,21 +549,40 @@ private fun ExtensionItem(
                             }
                         }
                     } else {
-                        // 多选分类：插件管理不提供启用开关，启用/停用在使用处进行（如表情面板）
-                        Text(
-                            text = when {
-                                !hostCompatible -> "不兼容"
-                                isEnabled -> "已启用"
-                                else -> "未启用"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (!hostCompatible)
-                                MaterialTheme.colorScheme.error
-                            else if (isEnabled)
-                                MaterialTheme.colorScheme.onSurface
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+                        // 多选／其他分类：提供启用开关（真正的开关，而非仅状态文字）。
+                        // 单选分类（语音/剪贴板同步/备份）仍是「去选择」单选激活语义，
+                        // 开关由使用处的选择结果决定，故不在此渲染。
+                        if (!hostCompatible) {
+                            Text(
+                                text = "不兼容",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else {
+                            Text(
+                                text = if (isEnabled) "已启用" else "未启用",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isEnabled) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = isEnabled,
+                                onCheckedChange = { checked ->
+                                    // 第三方插件启用前先确认信任（与「去选择」路径一致）
+                                    val apply = {
+                                        isEnabled = checked
+                                        viewModel.setPluginEnabled(extension.id, checked)
+                                    }
+                                    if (checked && extension.trustLevel != TrustLevel.TRUSTED) {
+                                        trustConfirmAction = apply
+                                        showTrustConfirm = true
+                                    } else {
+                                        apply()
+                                    }
+                                }
+                            )
+                        }
 
                         Spacer(modifier = Modifier.weight(1f))
                     }
