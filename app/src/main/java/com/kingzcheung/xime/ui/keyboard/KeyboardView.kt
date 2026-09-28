@@ -73,6 +73,7 @@ import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
 import com.kingzcheung.xime.shuangpin.ShuangpinKeyHint
 import com.kingzcheung.xime.shuangpin.ShuangpinSchemes
+import com.kingzcheung.xime.sms.SmsCodePluginConfig
 import com.kingzcheung.xime.sms.SmsCodeStore
 import com.kingzcheung.xime.ui.menubar.ClipboardView
 import com.kingzcheung.xime.ui.menubar.PermissionManagerView
@@ -377,7 +378,7 @@ fun KeyboardView(
             val smsContext = LocalContext.current
             LaunchedEffect(Unit) { SmsCodeStore.init(smsContext) }
             val smsCodes by SmsCodeStore.codes.collectAsStateWithLifecycle()
-            val smsFeatureEnabled = SettingsPreferences.isSmsCodeEnabled(smsContext)
+            val smsFeatureEnabled = SmsCodePluginConfig.isEnabled(smsContext)
             var smsNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
             LaunchedEffect(smsFeatureEnabled) {
                 while (smsFeatureEnabled) {
@@ -385,7 +386,7 @@ fun KeyboardView(
                     smsNow = System.currentTimeMillis()
                 }
             }
-            val smsTtlMillis = SettingsPreferences.getSmsCodeTtlSeconds(smsContext) * 1000L
+            val smsTtlMillis = SmsCodePluginConfig.getTtlSeconds(smsContext) * 1000L
             val latestSmsCode = if (smsFeatureEnabled) {
                 smsCodes.firstOrNull { smsNow - it.timestamp <= smsTtlMillis }
             } else null

@@ -740,8 +740,10 @@ object SettingsPreferences {
         getPrefs(context).edit().putString(KEY_STORE_JSON_MAPPING, mapping.trim()).apply()
     }
 
-    // ── 短信验证码 ──
-    // 默认关闭（隐私考虑）；需先在「管理权限」授予 RECEIVE_SMS 才会收到短信。
+    // ── 短信验证码（遗留）──
+    // 这些键是早期版本使用的宿主侧配置。验证码相关设置已迁至 sms-code 插件配置
+    // （见 SmsCodePluginConfig），运行期不再读取这里；保留仅为
+    // SmsCodePluginConfig.migrateLegacySettingsIfNeeded 一次性迁移旧值。
 
     const val KEY_SMS_CODE_ENABLED = "sms_code_enabled"
     const val KEY_SMS_AUTO_COPY = "sms_auto_copy"

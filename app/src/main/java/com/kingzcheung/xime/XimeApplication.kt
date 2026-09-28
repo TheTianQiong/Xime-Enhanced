@@ -50,6 +50,8 @@ class XimeApplication : Application(), ImageLoaderFactory {
 
         FileLogger.init(this)
         AppFonts.initialize(this)
+        // 验证码设置已迁至 sms-code 插件配置；把早期宿主偏好一次性搬过去
+        com.kingzcheung.xime.sms.SmsCodePluginConfig.migrateLegacySettingsIfNeeded(this)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {

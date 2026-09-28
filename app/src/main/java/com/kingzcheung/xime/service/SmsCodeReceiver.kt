@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
-import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.sms.SmsCodeExtractor
 import com.kingzcheung.xime.sms.SmsCodePluginConfig
 import com.kingzcheung.xime.sms.SmsCodeStore
@@ -23,7 +22,7 @@ class SmsCodeReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
-        if (!SettingsPreferences.isSmsCodeEnabled(context)) return
+        if (!SmsCodePluginConfig.isEnabled(context)) return
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
         if (messages.isEmpty()) return
@@ -39,7 +38,7 @@ class SmsCodeReceiver : BroadcastReceiver() {
         SmsCodeStore.init(context)
         SmsCodeStore.add(context, code, sender)
 
-        if (SettingsPreferences.isSmsAutoCopyEnabled(context)) {
+        if (SmsCodePluginConfig.isAutoCopyEnabled(context)) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("sms_code", code))
         }
