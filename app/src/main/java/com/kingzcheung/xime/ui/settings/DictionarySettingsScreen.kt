@@ -1,5 +1,7 @@
 package com.kingzcheung.xime.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +41,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,12 +53,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -123,11 +129,24 @@ fun DictionarySettingsContent(
         floatingActionButton = {
             // 个人词库已改为只读，仅自定义短语支持增删改
             if (selectedDictTab == 0) {
-                FloatingActionButton(
-                    onClick = { customPhraseVM.showAddDialog() },
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "添加", tint = MaterialTheme.colorScheme.onPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 批量导入词库（如医学词库）并统一设置频次
+                    FloatingActionButton(
+                        onClick = { customPhraseVM.showImportDialog() },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Icon(
+                            Icons.Default.Upload,
+                            contentDescription = "导入词库",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    FloatingActionButton(
+                        onClick = { customPhraseVM.showAddDialog() },
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "添加", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
                 }
             }
         }
@@ -343,6 +362,28 @@ private fun CustomPhraseTabContent(
             onDismiss = viewModel::hideAddDialog,
         )
     }
+
+    if (uiState.showImportDialog) {
+        DictImportDialog(
+            text = uiState.importText,
+            defaultWeight = uiState.importDefaultWeight,
+            isImporting = uiState.isImporting,
+            onTextChange = viewModel::setImportText,
+            onDefaultWeightChange = viewModel::setImportDefaultWeight,
+            onConfirm = viewModel::importEntries,
+            onDismiss = viewModel::hideImportDialog,
+        )
+    }
+
+    // 导入结果（一次性提示）
+    uiState.importMessage?.let { message ->
+        val snackbarHostState = remember { SnackbarHostState() }
+        LaunchedEffect(message) {
+            snackbarHostState.showSnackbar(message, withDismissAction = true)
+            viewModel.consumeImportMessage()
+        }
+        SnackbarHost(hostState = snackbarHostState)
+    }
     if (uiState.showEditDialog) {
         PhraseEditDialog(
             title = "编辑快捷短语",
@@ -355,6 +396,106 @@ private fun CustomPhraseTabContent(
             onConfirm = { viewModel.updateEntry(uiState.editIndex, uiState.editWord, uiState.editCode, uiState.editWeight.toIntOrNull()); viewModel.hideEditDialog() },
             onDismiss = viewModel::hideEditDialog,
         )
+    }
+}
+
+/**
+ * 词库导入对话框：选择词表文件或直接粘贴内容，统一设置频次后导入自定义短语表。
+ *
+ * 支持 rime `.dict.yaml` 数据段与纯文本「词⇥编码[⇥频次]」词表；
+ * 缺少编码的行无法被引擎命中，导入结果会提示跳过数量。
+ */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun DictImportDialog(
+    text: String,
+    defaultWeight: String,
+    isImporting: Boolean,
+    onTextChange: (String) -> Unit,
+    onDefaultWeightChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    // 选择词表文件后读入文本，便于用户先核对再导入
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                stream.readBytes().toString(Charsets.UTF_8)
+            }
+        }.getOrNull()?.let(onTextChange)
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+            Text("导入词库", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "支持 rime 词库（.dict.yaml）与纯文本词表，每行「词 + 编码 [+ 频次]」，" +
+                    "以制表符或空格分隔。词条会并入「自定义短语」表并立即生效。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = defaultWeight,
+                onValueChange = { onDefaultWeightChange(it.filter { c -> c.isDigit() }.take(4)) },
+                label = { Text("统一频次（可选）") },
+                supportingText = { Text("词条自身未带频次时套用；数值越大越优先（自定义短语表基准为 99）") },
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChange,
+                label = { Text("词表内容") },
+                placeholder = { Text("每行一条，如：心肌梗死 <编码>") },
+                shape = RoundedCornerShape(12.dp),
+                minLines = 5,
+                maxLines = 10,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+
+            TextButton(onClick = { filePicker.launch(arrayOf("text/*", "application/octet-stream", "*/*")) }) {
+                Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("选择词表文件")
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("取消") }
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.clickable(
+                        enabled = text.isNotBlank() && !isImporting,
+                        onClick = onConfirm,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                ) {
+                    Text(
+                        if (isImporting) "导入中…" else "导入",
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
