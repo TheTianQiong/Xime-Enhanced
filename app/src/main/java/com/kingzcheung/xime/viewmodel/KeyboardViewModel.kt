@@ -20,6 +20,7 @@ import com.kingzcheung.xime.keyboard.ToolbarButtonItem
 import com.kingzcheung.xime.plugin.core.api.PluginResultItem
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SchemaInfo
+import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.speech.RecognitionState
 import com.kingzcheung.xime.ui.keyboard.KeyboardDispatchAction
 import com.kingzcheung.xime.ui.keyboard.KeyboardLayoutState
@@ -113,12 +114,20 @@ class KeyboardViewModel(application: Application) : AndroidViewModel(application
     private val _shiftMode = MutableStateFlow(ShiftMode.OFF)
     val shiftMode: StateFlow<ShiftMode> = _shiftMode.asStateFlow()
 
-    private val _keyboardState = MutableStateFlow<KeyboardLayoutState>(KeyboardLayoutState.Chinese)
+    // 首帧布局：从持久化方案同步推导，不依赖引擎异步就绪。
+    // 冷启动/服务重建时若用固定默认值，弹出键盘会先渲染全键盘、
+    // 引擎就绪更新方案后才切到九键/笔画，表现为布局闪烁
+    private val initialKbState = initialKeyboardLayoutState(
+        isAsciiMode = false,
+        schemaId = SettingsPreferences.getCurrentSchema(application),
+    )
+
+    private val _keyboardState = MutableStateFlow<KeyboardLayoutState>(initialKbState)
     val keyboardState: StateFlow<KeyboardLayoutState> = _keyboardState.asStateFlow()
 
     /** 最近一次停留的主键盘布局（中文/英文全键盘、九键、笔画）；
      *  数字面板据此判断进入来源，决定「返回/符号」键的位置自适应 */
-    private val _lastMainLayout = MutableStateFlow<KeyboardLayoutState>(KeyboardLayoutState.Chinese)
+    private val _lastMainLayout = MutableStateFlow<KeyboardLayoutState>(initialKbState)
     val lastMainLayout: StateFlow<KeyboardLayoutState> = _lastMainLayout.asStateFlow()
 
     private val _page = MutableStateFlow<KeyboardPage>(KeyboardPage.Main(MainType.FULL))
@@ -168,7 +177,14 @@ class KeyboardViewModel(application: Application) : AndroidViewModel(application
     val asciiStateMachine = KeyboardAsciiStateMachine()
 
     /** 统一视图状态（替换 keyboardState + page 双轴） */
-    private val _viewState = MutableStateFlow<KeyboardViewState>(KeyboardViewState.ChineseFull)
+    private val _viewState = MutableStateFlow<KeyboardViewState>(
+        when (initialKbState) {
+            KeyboardLayoutState.T9Pinyin -> KeyboardViewState.T9PinyinFull
+            KeyboardLayoutState.Stroke -> KeyboardViewState.StrokeFull
+            KeyboardLayoutState.English -> KeyboardViewState.EnglishFull
+            else -> KeyboardViewState.ChineseFull
+        }
+    )
     val viewState: StateFlow<KeyboardViewState> = _viewState.asStateFlow()
 
     /**
@@ -291,10 +307,10 @@ class KeyboardViewModel(application: Application) : AndroidViewModel(application
             }
             is KeyboardDispatchAction.AsciiModeChanged -> {
                 if (current is KeyboardViewState.Overlay) {
-                    FileLogger.i("XimeKeyboard", "AsciiModeChanged skipped: current=$current (overlay)")
+                    FileLogger.d("XimeKeyboard", "AsciiModeChanged skipped: current=$current (overlay)")
                     Triple(current, _page.value, _keyboardState.value)
                 } else if (current is KeyboardViewState.NumberPanel || current is KeyboardViewState.CommonSymbolPanel) {
-                    FileLogger.i("XimeKeyboard", "AsciiModeChanged skipped: current=$current (panel)")
+                    FileLogger.d("XimeKeyboard", "AsciiModeChanged skipped: current=$current (panel)")
                     Triple(current, _page.value, _keyboardState.value)
                 } else if (!action.isAsciiMode && isHandwritingSchema(action.schemaId)) {
                     Triple(KeyboardViewState.Handwriting, KeyboardPage.Main(MainType.HANDWRITING), KeyboardLayoutState.Chinese)
@@ -307,7 +323,7 @@ class KeyboardViewModel(application: Application) : AndroidViewModel(application
                         is KeyboardLayoutState.Stroke -> KeyboardViewState.StrokeFull
                         else -> KeyboardViewState.ChineseFull
                     }
-                    FileLogger.i("XimeKeyboard", "AsciiModeChanged dispatch: current=$current, ascii=${action.isAsciiMode}, schemaId=${action.schemaId}, -> $vs / $kb")
+                    FileLogger.d("XimeKeyboard", "AsciiModeChanged dispatch: current=$current, ascii=${action.isAsciiMode}, schemaId=${action.schemaId}, -> $vs / $kb")
                     Triple(vs, KeyboardPage.Main(MainType.FULL), kb)
                 }
             }
@@ -425,7 +441,7 @@ class KeyboardViewModel(application: Application) : AndroidViewModel(application
         _keyboardState.value = state
         _syncViewState()
         if (prevKb != state) {
-            FileLogger.i("XimeKeyboard", "setKeyboardState: $prevKb -> $state, vs=${_viewState.value}, page=${_page.value}")
+            FileLogger.d("XimeKeyboard", "setKeyboardState: $prevKb -> $state, vs=${_viewState.value}, page=${_page.value}")
         }
     }
     

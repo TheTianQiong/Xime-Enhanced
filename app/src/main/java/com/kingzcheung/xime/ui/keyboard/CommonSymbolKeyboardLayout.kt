@@ -145,7 +145,8 @@ fun CommonSymbolKeyboardLayout(
                 onToggleAsciiMode = {
                     FileLogger.i("XimeKeyboard", "panel En key tapped (landscape): localAsciiMode=$localAsciiMode -> ${!localAsciiMode}, uiAscii=$isAsciiMode")
                     localAsciiMode = !localAsciiMode
-                    onKeyPress("ime_switch")
+                    // 面板内中英键走 ime_switch_panel（PANEL_SYNC）：切引擎但不持久化
+                    onKeyPress("ime_switch_panel")
                 },
                 keySpacingX = keySpacingX,
                 keySpacingY = keySpacingY,
@@ -321,7 +322,8 @@ fun CommonSymbolKeyboardLayout(
                                 onClick = {
                                     FileLogger.i("XimeKeyboard", "panel En key tapped: localAsciiMode=$localAsciiMode -> ${!localAsciiMode}, uiAscii=$isAsciiMode")
                                     localAsciiMode = !localAsciiMode
-                                    onKeyPress("ime_switch")
+                                    // 面板内中英键走 ime_switch_panel（PANEL_SYNC）：切引擎但不持久化
+                                    onKeyPress("ime_switch_panel")
                                 },
                                 backgroundColor = specialKeyBackgroundColor,
                                 textColor = specialKeyTextColor,

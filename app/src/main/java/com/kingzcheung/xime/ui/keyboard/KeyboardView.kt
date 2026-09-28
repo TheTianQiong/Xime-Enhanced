@@ -181,7 +181,9 @@ fun KeyboardView(
         val target = viewModel.asciiStateMachine.targetFor(curContext, state.isAsciiMode)
         if (target != null) {
             FileLogger.i("XimeKeyboard", "ascii sync: ${prevContext.name}(${state.isAsciiMode}) -> ${curContext.name}($target)")
-            callbacks.onKeyPress("ime_switch", false)
+            // 面板上下文同步走 ime_switch_panel（PANEL_SYNC）：切引擎但不写 user.yaml，
+            // 临时态不污染用户显式中英选择
+            callbacks.onKeyPress("ime_switch_panel", false)
         }
     }
 
@@ -315,7 +317,7 @@ fun KeyboardView(
                 cs.candidates, cs.candidateComments, cs.inputText, cs.preeditText, cs.isComposing,
                 cs.associationCandidates, cs.pendingEnglishText, cs.isShowingRecentClipboard, cs.hasNextPage,
                 state.isCalculatorMode, handwritingCandidates, handwritingComments, showHandwritingCandidates,
-                railExpanded,
+                railExpanded, cs.preeditCaretPos, state.recentClipboardItems,
             ) {
                 if (showHandwritingCandidates) {
                     CandidateBarState.AssociationOnly(
@@ -338,6 +340,13 @@ fun KeyboardView(
                         isShowingRecentClipboard = cs.isShowingRecentClipboard,
                         hasNextPage = cs.hasNextPage,
                         isCalculatorActive = state.isCalculatorMode,
+                        preeditCaretPos = cs.preeditCaretPos,
+                        // 剪贴板态：与 cs.candidates 同序同长，非图片位为 null（展开态数据源不同则不带图片）
+                        clipboardImages = if (cs.isShowingRecentClipboard && railExpanded.isEmpty()) {
+                            state.recentClipboardItems.map { if (it.isImage) it else null }
+                        } else {
+                            emptyList()
+                        },
                     )
                 }
             }
@@ -399,12 +408,15 @@ fun KeyboardView(
                     isFocused = state.toolPanelInputFocused,
                     isLoading = state.toolPanelLoading,
                     initialText = state.toolPanelPrefillText,
+                    controls = state.toolPanelUiNodes,
                     backgroundColor = Color.Transparent,
                     textColor = keyTextColor,
                     accentColor = accentColor,
                     cardBgColor = keyBgColor,
                     onClose = { callbacks.onToolPanelClose?.invoke() },
                     onFocusChange = { focused -> callbacks.onToolPanelFocusChange?.invoke(focused) },
+                    onFieldInput = { key, value -> callbacks.onToolPanelFieldInput?.invoke(key, value) },
+                    onPanelAction = { actionId -> callbacks.onToolPanelAction?.invoke(actionId) },
                 )
             }
 
@@ -413,6 +425,8 @@ fun KeyboardView(
                 page = page,
                 candidatePageExpanded = candidatePageExpanded,
                 isFloatingMode = state.isFloatingMode,
+                // 候选栏图片候选的缩略图文件（不存在返回 null → 渲染占位图标）
+                clipboardImageFileOf = { item -> viewModel.clipboardManager.imageFileOf(item) },
                 isVoiceSticky = state.voiceSticky,
                 voiceAmplitude = voiceAmplitudeState.value,
                 voiceSpectrum = voiceSpectrumState.value,
@@ -1411,6 +1425,11 @@ fun KeyboardView(
                             callbacks.onClipboardSelect?.invoke(text)
                             viewModel.closeOverlay()
                         },
+                        onSelectImage = { item ->
+                            callbacks.onClipboardImageSelect?.invoke(item)
+                            viewModel.closeOverlay()
+                        },
+                        imageFileOf = { item -> viewModel.clipboardManager.imageFileOf(item) },
                         onSplitWords = { text, _ -> viewModel.pushOverlay(OverlayRoute.SplitWords(text)) },
                         onBack = { viewModel.closeOverlay() },
                         onClipboardTabChange = { viewModel.pushOverlay(OverlayRoute.Clipboard(it)) },

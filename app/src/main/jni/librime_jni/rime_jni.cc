@@ -33,11 +33,13 @@
 //      （Debug=1, Release=0）。Release 下宏展开为空语句，零开销。
 //   2) 运行时：Debug 构建保留运行时开关 g_rime_jni_verbose_logging，
 //      Kotlin 可通过 nativeSetVerboseLogging 手动切换，开发时不用重编。
+//      默认关闭：打字高频路径的 Candidate[...] 等日志每次按键数十行，
+//      需要排查时再在设置/代码中打开。
 #ifndef RIME_JNI_VERBOSE_LOGGING
 #define RIME_JNI_VERBOSE_LOGGING 0
 #endif
 #if RIME_JNI_VERBOSE_LOGGING == 1
-static volatile bool g_rime_jni_verbose_logging = true;
+static volatile bool g_rime_jni_verbose_logging = false;
 #define LOGI(...) do { if (g_rime_jni_verbose_logging) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__); } while (0)
 #define LOGD(...) do { if (g_rime_jni_verbose_logging) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__); } while (0)
 #else
@@ -62,6 +64,9 @@ struct ProcessResult {
     std::string committedText;
     std::string inputText;
     std::string preeditText;
+    // raw input 内的光标位置（字符）；preedit 中的光标位置（UTF-8 字节偏移）
+    int caretPos = 0;
+    int preeditCursorPos = 0;
     std::vector<std::pair<std::string, std::string>> candidates;
     bool isAsciiMode = false;
     bool hasNextPage = false;
@@ -75,6 +80,9 @@ struct ProcessResult {
 struct CompositionResult {
     std::string input;
     std::string preedit;
+    // raw input 内的光标位置（字符）；preedit 中的光标位置（UTF-8 字节偏移）
+    int caretPos = 0;
+    int preeditCursorPos = 0;
     std::string committedText;
     std::vector<std::pair<std::string, std::string>> candidates;
     bool isAsciiMode = false;
@@ -235,6 +243,8 @@ public:
         result.inputText = input ? input : "";
         result.preeditText = context.composition.preedit ?
             context.composition.preedit : "";
+        result.caretPos = static_cast<int>(rime->get_caret_pos(session_id_));
+        result.preeditCursorPos = context.composition.cursor_pos;
         LOGI("readCurrentState: input='%s' preedit='%s' num_candidates=%d", result.inputText.c_str(), result.preeditText.c_str(), context.menu.num_candidates);
         if (context.menu.num_candidates > 0) {
             for (int i = 0; i < context.menu.num_candidates; ++i) {
@@ -321,6 +331,7 @@ public:
         // 1. raw input
         const char* input = rime->get_input(session_id_);
         result.input = input ? input : "";
+        result.caretPos = static_cast<int>(rime->get_caret_pos(session_id_));
 
         // 2. context: preedit + candidates + pagination
         RIME_STRUCT(RimeContext, context);
@@ -328,6 +339,7 @@ public:
             if (context.composition.preedit) {
                 result.preedit = context.composition.preedit;
             }
+            result.preeditCursorPos = context.composition.cursor_pos;
             LOGI("getComposition: input='%s' num_candidates=%d", result.input.c_str(), context.menu.num_candidates);
             for (int i = 0; i < context.menu.num_candidates; ++i) {
                 const char* text = context.menu.candidates[i].text;
@@ -717,7 +729,65 @@ public:
         LOGI("Deployment completed successfully");
         return true;
     }
-    
+
+    /**
+     * 用户词典同步（librime 原生 sync）：合并 sync 目录下其他设备的快照进 userdb，
+     * 并导出本机快照（TSV 文本，经时间戳合并，无 leveldb 文件级覆盖的一致性风险）。
+     * 与 deploy() 同构：销毁会话 → 触发同步任务 → 轮询维护结束 → 重建会话。
+     */
+    bool syncUserData() {
+        if (!rime) {
+            LOGE("syncUserData: rime not available");
+            return false;
+        }
+
+        // sync 输出/合并目录固定在用户数据目录下。librime 默认 sync_dir 为
+        // 相对路径 "sync"，在 Android 会落到进程 CWD（无权限）导致静默失败。
+        // rime::path 的字符串构造在非 Windows 下为 explicit，需显式构造后赋值
+        rime::Service::instance().deployer().sync_dir =
+            rime::path(user_data_dir_ + "/sync");
+        LOGI("Syncing user data, sync_dir=%s/sync", user_data_dir_.c_str());
+
+        // 与 deploy() 一致先销毁旧会话；同步任务内部亦会清理全部会话
+        if (session_id_) {
+            rime->destroy_session(session_id_);
+            session_id_ = 0;
+        }
+
+        // levers 模块注册的部署任务（installation_update/backup_config_files/
+        // user_dict_sync）需先加载模块组：start_maintenance 路径内部会
+        // LoadModules(kDeployerModules)，而 sync_user_data 不会——冷启动后
+        // 直接同步会报 unknown deployment task 并失败（与 deploySchema 同款先例）
+        rime::LoadModules(rime::kDeployerModules);
+
+        Bool result = rime->sync_user_data();
+        if (!result) {
+            LOGE("syncUserData: sync_user_data() returned false");
+            return false;
+        }
+
+        // user_dict_sync 是部署任务，等待维护结束（与 deploy() 同款轮询）
+        int wait_count = 0;
+        while (rime->is_maintenance_mode()) {
+            usleep(100000);  // 100ms
+            wait_count++;
+            if (wait_count % 10 == 0) {
+                LOGI("Waiting for user dict sync... (%d seconds)", wait_count / 10);
+            }
+        }
+
+        // 重建会话
+        session_id_ = rime->create_session();
+        if (!session_id_) {
+            LOGE("Failed to create session after sync");
+            return false;
+        }
+        reapplyPageSizeIfNeeded();
+
+        LOGI("User dict sync completed successfully");
+        return true;
+    }
+
     bool deploySchema(const char* schemaId) {
         if (!rime) {
             LOGE("deploySchema: rime not available");
@@ -996,14 +1066,14 @@ static void ensureJniCache(JNIEnv* env) {
         jclass cls = env->FindClass("com/kingzcheung/xime/rime/RimeProcessResult");
         gRimeProcessResultClass = (jclass)env->NewGlobalRef(cls);
         gRimeProcessResultCtor = env->GetMethodID(gRimeProcessResultClass, "<init>",
-            "(ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[Lcom/kingzcheung/xime/rime/RimeCandidate;ZZZLjava/lang/String;Ljava/lang/String;)V");
+            "(ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[Lcom/kingzcheung/xime/rime/RimeCandidate;ZZZLjava/lang/String;Ljava/lang/String;II)V");
         env->DeleteLocalRef(cls);
     }
     if (!gRimeCompositionClass) {
         jclass cls = env->FindClass("com/kingzcheung/xime/rime/RimeComposition");
         gRimeCompositionClass = (jclass)env->NewGlobalRef(cls);
         gRimeCompositionCtor = env->GetMethodID(gRimeCompositionClass, "<init>",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[Lcom/kingzcheung/xime/rime/RimeCandidate;ZZZ)V");
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[Lcom/kingzcheung/xime/rime/RimeCandidate;ZZZII)V");
         env->DeleteLocalRef(cls);
     }
 }
@@ -1141,7 +1211,9 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeProcessKeyAndGetResult(
         result.hasNextPage ? JNI_TRUE : JNI_FALSE,
         result.hasPrevPage ? JNI_TRUE : JNI_FALSE,
         jT9Panel,
-        jT9Options);
+        jT9Options,
+        result.caretPos,
+        result.preeditCursorPos);
 
     env->DeleteLocalRef(jCommitted);
     env->DeleteLocalRef(jInput);
@@ -1192,7 +1264,9 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeGetProcessResult(
         result.hasNextPage ? JNI_TRUE : JNI_FALSE,
         result.hasPrevPage ? JNI_TRUE : JNI_FALSE,
         jT9Panel,
-        jT9Options);
+        jT9Options,
+        result.caretPos,
+        result.preeditCursorPos);
 
     env->DeleteLocalRef(jCommitted);
     env->DeleteLocalRef(jInput);
@@ -1256,7 +1330,9 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeGetComposition(
         candidateArray,
         result.hasNextPage ? JNI_TRUE : JNI_FALSE,
         result.hasPrevPage ? JNI_TRUE : JNI_FALSE,
-        result.isAsciiMode ? JNI_TRUE : JNI_FALSE);
+        result.isAsciiMode ? JNI_TRUE : JNI_FALSE,
+        result.caretPos,
+        result.preeditCursorPos);
 
     env->DeleteLocalRef(jInput);
     env->DeleteLocalRef(jPreedit);
@@ -1979,6 +2055,15 @@ Java_com_kingzcheung_xime_rime_RimeEngine_nativeStartMaintenance(
 ) {
     Bool result = Rime::Instance().startMaintenance(full == JNI_TRUE);
     return result ? JNI_TRUE : JNI_FALSE;
+}
+
+// 用户词典同步：合并 sync 目录下已有快照 + 导出本机快照，阻塞至维护结束
+JNIEXPORT jboolean JNICALL
+Java_com_kingzcheung_xime_rime_RimeEngine_nativeSyncUserData(
+    JNIEnv* env,
+    jobject thiz
+) {
+    return Rime::Instance().syncUserData() ? JNI_TRUE : JNI_FALSE;
 }
 
 // 更新 last_build_time 为当前时间，避免下次增量检测误判

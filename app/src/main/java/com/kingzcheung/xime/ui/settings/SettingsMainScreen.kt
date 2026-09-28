@@ -25,6 +25,7 @@ import androidx.compose.material.icons.twotone.Backup
 import androidx.compose.material.icons.twotone.Ballot
 
 import androidx.compose.material.icons.twotone.Build
+import androidx.compose.material.icons.twotone.ContentPaste
 import androidx.compose.material.icons.twotone.Description
 import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.GraphicEq
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.SortByAlpha
 import androidx.compose.material.icons.twotone.Storefront
 import androidx.compose.material.icons.twotone.Straighten
-import androidx.compose.material.icons.twotone.Sync
 import androidx.compose.material.icons.twotone.TableChart
 import androidx.compose.material.icons.twotone.Tune
 import androidx.compose.material.icons.twotone.ToggleOn
@@ -85,6 +85,7 @@ fun SettingsMainContent(
     onNavigateToClipboardSync: () -> Unit = {},
     onNavigateToPermissionManager: () -> Unit = {},
     onNavigateToExtensionStoreSettings: () -> Unit = {},
+    onNavigateToClipboard: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -378,19 +379,25 @@ fun SettingsMainContent(
             }
 
             item {
-                SettingsSection(                title = "同步与备份", content = {
+                // 分组含两类"本地数据/数据流向"设置：剪贴板（内容与同步）优先，其后是词典与配置的同步备份
+                SettingsSection(title = "数据与同步", content = {
                     SettingsItem(
-                        icon = Icons.TwoTone.Backup,
-                        title = "云备份",
-                        subtitle = "通过备份插件将配置备份到云端并恢复",
-                        onClick = onNavigateToBackup,
+                        icon = Icons.TwoTone.ContentPaste,
+                        title = "剪贴板",
+                        subtitle = "图片记录、体积限制、占用清理与剪贴板同步",
+                        onClick = onNavigateToClipboard,
                         showArrow = true
                     )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
                     SettingsItem(
-                        icon = Icons.TwoTone.Sync,
-                        title = "剪贴板同步",
-                        subtitle = "通过插件将剪贴板与远端设备双向同步",
-                        onClick = onNavigateToClipboardSync,
+                        icon = Icons.TwoTone.Backup,
+                        title = "同步与备份",
+                        subtitle = "多设备词典互通与配置备份",
+                        onClick = onNavigateToBackup,
                         showArrow = true
                     )
                 })
