@@ -648,6 +648,22 @@ object KeysConfigHelper {
     // 英文键盘（qwerty_en）手势配置缓存
     private val _keyGestureConfigEn = mutableStateOf<Map<String, KeyBinding>>(emptyMap())
     val keyGestureConfigEn: Map<String, KeyBinding> get() = _keyGestureConfigEn.value
+
+    // 由用户/布局包（xime.custom.yaml）指定了「另有内容」键面标签的键。
+    // 双拼提示据此让位：布局作者写了别的标签时不该被提示顶掉。
+    private val _customKeyLabelKeys = mutableStateOf<Set<String>>(emptySet())
+    private val _customKeyLabelKeysEn = mutableStateOf<Set<String>>(emptySet())
+
+    /**
+     * 该键的键面标签是否由用户/布局包指定、且与按键字母不同。
+     *
+     * 内置 xime.yaml 给每个字母键都写了 `tap`（标签就是字母本身），所以不能按
+     * 「有 tap.label」判定，否则双拼提示永远不会显示；判据是**标签另有内容**。
+     */
+    fun hasCustomKeyLabel(key: String, isAsciiMode: Boolean = false): Boolean {
+        val keys = if (isAsciiMode) _customKeyLabelKeysEn.value else _customKeyLabelKeys.value
+        return key.lowercase() in keys
+    }
     
     // 键盘颜色配置缓存
     private var keyboardColorsConfig: KeyboardColorsConfig = KeyboardColorsConfig()
@@ -918,7 +934,26 @@ object KeysConfigHelper {
         }
         val zh = if (customZh != null) defaultZh + customZh else defaultZh
         val en = if (customEn != null) defaultEn + customEn else defaultEn
+        // 记录自定义层里「另有内容」的键面标签，供双拼提示让位
+        _customKeyLabelKeys.value = customZh?.let { customKeyLabelKeysOf(it) } ?: emptySet()
+        _customKeyLabelKeysEn.value = customEn?.let { customKeyLabelKeysOf(it) } ?: emptySet()
         return Pair(zh, en)
+    }
+
+    /** 自定义层中键面标签「另有内容」的键（标签缺省或就是按键字母本身时不计入）。 */
+    internal fun customKeyLabelKeysOf(map: Map<String, KeyBinding>): Set<String> =
+        map.keys.filterTo(mutableSetOf()) { key -> isInformativeCustomLabel(key, map[key]?.tap?.label) }
+
+    /**
+     * 自定义标签是否「另有内容」：非空，且与按键字母本身不同。
+     *
+     * 布局里写 `q: { tap: "q", swipe_up: "!" }` 往往只是为了覆盖同一键的其它手势，
+     * 标签与默认一致，不该因此把双拼提示顶掉；写 `q: { tap: { label: "七" } }` 或
+     * `label: ["q", "七"]`（多行标签）才是作者真的要改键面，此时提示让位。
+     */
+    internal fun isInformativeCustomLabel(key: String, label: String?): Boolean {
+        if (label.isNullOrBlank()) return false
+        return !label.trim().equals(key, ignoreCase = true)
     }
 
     /** 从 xime.yaml + xime.custom.yaml 合并解析键盘颜色配置（字段级一路 fallback）。 */

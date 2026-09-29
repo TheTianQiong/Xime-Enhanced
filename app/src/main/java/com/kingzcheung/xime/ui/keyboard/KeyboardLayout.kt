@@ -111,7 +111,8 @@ import androidx.compose.ui.unit.TextUnit
  * 字母键的键面文本：小鹤双拼方案下按当前输入状态显示声母/韵母映射。
  *
  * - 未激活双拼提示 / 非字母键 → 沿用 YAML 配置的标签；
- * - 激活时偶数键显示声母映射（q→q、v→zh、i→ch、u→sh），
+ * - 布局或用户在 xime.custom.yaml 中给该键写了**另有内容**的标签 → 以配置为准（提示让位）；
+ * - 其余情况下激活时偶数键显示声母映射（q→q、v→zh、i→ch、u→sh），
  *   奇数键显示韵母映射（q→iu、c→ao…）。
  * 仅影响显示，提交给 Rime 的键码不变。
  */
@@ -119,17 +120,27 @@ import androidx.compose.ui.unit.TextUnit
 private fun effectiveKeyLabel(key: String, isAsciiMode: Boolean): String {
     val hint = LocalShuangpinKeyHint.current
     val scheme = hint.scheme
-    if (!isAsciiMode && hint.active && scheme != null && key.length == 1 && key[0].lowercaseChar() in 'a'..'z') {
+    // 双拼提示让位于自定义布局：作者/用户给该键写了别的标签时以配置为准
+    val hintTakesOver = !KeysConfigHelper.hasCustomKeyLabel(key, isAsciiMode)
+    if (hintTakesOver && !isAsciiMode && hint.active && scheme != null &&
+        key.length == 1 && key[0].lowercaseChar() in 'a'..'z'
+    ) {
         return scheme.keyLabel(key.lowercase(), hint.showYunmu)
     }
     return KeysConfigHelper.getKeyDisplayLabel(key, isAsciiMode)
 }
 
-/** 双拼提示状态：(是否激活, 是否显示韵母)。 */
+/**
+ * 该键是否由双拼提示接管键面：(是否激活, 是否显示韵母)。
+ *
+ * 布局/用户通过 xime.custom.yaml 给该键写了「另有内容」的标签时提示让位——
+ * 作者明确指定了键面就不能被提示顶掉（见 KeysConfigHelper.hasCustomKeyLabel）。
+ */
 @Composable
-private fun shuangpinHintState(): Pair<Boolean, Boolean> {
+private fun shuangpinHintState(key: String, isAsciiMode: Boolean): Pair<Boolean, Boolean> {
     val hint = LocalShuangpinKeyHint.current
-    return hint.active to hint.showYunmu
+    val active = hint.active && !KeysConfigHelper.hasCustomKeyLabel(key, isAsciiMode)
+    return active to hint.showYunmu
 }
 
 /** 双拼韵母键面统一字号（避免长短不一）。 */
@@ -1322,7 +1333,7 @@ fun KeyboardRowWithConfig(
                 Unit
             } }
 
-            val (shpActive, shpYunmu) = shuangpinHintState()
+            val (shpActive, shpYunmu) = shuangpinHintState(key, isAsciiMode)
             SwipeableKeyButton(
                 layoutMode = KeysConfigHelper.getButtonLayout(isAsciiMode),
                 text = displayText,
@@ -2179,7 +2190,7 @@ fun CompactKeyboardRowWithConfig(
                 Unit
             } }
 
-            val (shpActive, shpYunmu) = shuangpinHintState()
+            val (shpActive, shpYunmu) = shuangpinHintState(key, isAsciiMode)
             SwipeableKeyButtonLandscape(
                 text = compactDisplayText,
                 onClick = compactOnClick,
