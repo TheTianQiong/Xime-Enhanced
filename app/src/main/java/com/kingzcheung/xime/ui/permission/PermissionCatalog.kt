@@ -36,7 +36,8 @@ data class PluginUsage(val name: String, val enabled: Boolean)
  * 权限目录：输入法用到的全部权限 + 「谁需要它」的推导。
  *
  * 插件侧的权限来源有两类：
- * 1. **显式声明**：manifest.yaml 的 `permissions:`（见 [PluginInfo.declaredPermissions]）；
+ * 1. **显式声明**：manifest.json 的 `permissions`（见 [PluginInfo.declaredPermissions]，
+ *    随安装写入注册表 plugins.json，重启后仍可读）；
  * 2. **按能力推导**：语音类插件需要麦克风；声明了域名/自定义服务器地址、
  *    或属于同步/备份类的插件需要网络（含网络状态检测）。
  *

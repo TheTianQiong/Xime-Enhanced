@@ -155,6 +155,11 @@ internal data class RegistryPlugin(
     val toolbarButtons: List<RegistryToolbarButton> = emptyList(),
     val manifestIcon: String? = null,
     val capabilities: JsonObject? = null,
+    /**
+     * manifest.permissions 声明的 Android 权限（供宿主「管理权限」页展示
+     * 「哪些插件需要该权限」，不构成授权）。旧条目无此字段 → 空列表。
+     */
+    val declaredPermissions: List<String> = emptyList(),
     /** 目标平台声明（旧条目缺省为空，读取时归一化为 android）。 */
     val platforms: List<String> = emptyList()
 )
@@ -189,6 +194,7 @@ internal fun PluginInfo.toRegistryPlugin(): RegistryPlugin = RegistryPlugin(
     },
     manifestIcon = manifestIcon,
     capabilities = capabilities?.toJson(),
+    declaredPermissions = declaredPermissions,
     platforms = platforms
 )
 
@@ -217,6 +223,7 @@ internal fun RegistryPlugin.toPluginInfo(): PluginInfo {
         },
         manifestIcon = manifestIcon,
         capabilities = capabilities?.toPluginCapabilities(),
+        declaredPermissions = declaredPermissions,
         // 旧版 plugins.json 条目无 platforms 字段：归一化为 android（与缺省声明一致）
         platforms = platforms.ifEmpty { listOf(PluginInfo.PLATFORM_ANDROID) }
     )

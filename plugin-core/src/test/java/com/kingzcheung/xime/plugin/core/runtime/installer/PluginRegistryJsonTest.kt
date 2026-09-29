@@ -52,7 +52,8 @@ class PluginRegistryJsonTest {
             candidateTransform = true,
             quickSendRead = true,
             clipboardRead = true
-        )
+        ),
+        declaredPermissions = listOf("RECEIVE_SMS", "android.permission.RECORD_AUDIO")
     )
 
     @Test
@@ -180,5 +181,27 @@ class PluginRegistryJsonTest {
         val info = sampleInfo().copy(platforms = listOf("ios"))
         assertFalse(info.supportsPlatform(PluginInfo.PLATFORM_ANDROID))
         assertTrue(info.supportsPlatform("ios"))
+    }
+
+    @Test
+    fun `manifest 声明的权限写入注册表并可读回`() {
+        val text = encodeRegistryJson(listOf(sampleInfo()))
+        assertTrue("declaredPermissions 应持久化", text.contains("\"declaredPermissions\""))
+
+        val decoded = decodeRegistryJson(text).single()
+        assertEquals(
+            "重启后「管理权限」页仍需读到插件声明的权限",
+            listOf("RECEIVE_SMS", "android.permission.RECORD_AUDIO"),
+            decoded.declaredPermissions
+        )
+    }
+
+    @Test
+    fun `旧注册表条目无 declaredPermissions 时读回为空`() {
+        val legacy = """
+            {"version":1,"plugins":[{"id":"old","name":"旧插件","type":"unknown",
+              "path":"/tmp/old/main.js","versionName":"1.0.0"}]}
+        """.trimIndent()
+        assertEquals(emptyList<String>(), decodeRegistryJson(legacy).single().declaredPermissions)
     }
 }

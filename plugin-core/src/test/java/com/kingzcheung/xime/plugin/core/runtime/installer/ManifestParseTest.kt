@@ -380,10 +380,11 @@ class ManifestParseTest {
     @Test
     fun `permissions 声明被解析`() {
         val content = """
-            id: sms
-            type: unknown
-            permissions:
-              - RECEIVE_SMS
+            {
+              "id": "sms",
+              "type": "unknown",
+              "permissions": ["RECEIVE_SMS"]
+            }
         """.trimIndent()
 
         val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
@@ -393,7 +394,7 @@ class ManifestParseTest {
 
     @Test
     fun `permissions 缺省时为空列表`() {
-        val config = (InstallerManager.parseManifestContent("id: mini") as PluginParseResult.Success).config
+        val config = (InstallerManager.parseManifestContent("""{ "id": "mini" }""") as PluginParseResult.Success).config
 
         assertTrue("未声明时应为空", config.permissions.isEmpty())
     }
@@ -401,11 +402,14 @@ class ManifestParseTest {
     @Test
     fun `permissions 去除空白与重复项`() {
         val content = """
-            id: dup
-            permissions:
-              - "  RECEIVE_SMS  "
-              - android.permission.RECEIVE_SMS
-              - RECEIVE_SMS
+            {
+              "id": "dup",
+              "permissions": [
+                "  RECEIVE_SMS  ",
+                "android.permission.RECEIVE_SMS",
+                "RECEIVE_SMS"
+              ]
+            }
         """.trimIndent()
 
         val config = (InstallerManager.parseManifestContent(content) as PluginParseResult.Success).config
@@ -421,6 +425,8 @@ class ManifestParseTest {
      * 守护全部内置插件的 manifest 均可被当前 schema 解析：
      * 新增/重命名字段时若与某个 manifest 冲突（如 strict 模式下的未知字段），
      * 此测试会失败，避免运行期静默加载失败。
+     *
+     * v3 插件清单为 manifest.json（Lua 时代的 manifest.yaml 已不被宿主读取）。
      */
     @Test
     fun `全部内置插件 manifest 均可解析`() {
@@ -429,14 +435,14 @@ class ManifestParseTest {
 
         val manifests = pluginsDir.listFiles()
             .orEmpty()
-            .map { java.io.File(it, "manifest.yaml") }
+            .map { java.io.File(it, "manifest.json") }
             .filter { it.isFile }
 
         assertTrue("应至少找到一个内置插件 manifest", manifests.isNotEmpty())
         manifests.forEach { file ->
             val result = InstallerManager.parseManifestContent(file.readText())
             assertTrue(
-                "${file.parentFile.name}/manifest.yaml 解析失败: " +
+                "${file.parentFile.name}/manifest.json 解析失败: " +
                     (result as? PluginParseResult.Failure)?.reason,
                 result is PluginParseResult.Success,
             )
