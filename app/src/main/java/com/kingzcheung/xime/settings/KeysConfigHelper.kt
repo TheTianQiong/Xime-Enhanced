@@ -766,6 +766,10 @@ object KeysConfigHelper {
     private var mergedConfigVersion = 0
     
     fun loadConfig(context: Context): KeysConfig {
+        // 双拼提示表（独立文件，独立缓存戳）：必须放在 loadXimeConfig 的早返回之外，
+        // 否则只改提示表不会触发重载。挂在这里可让应用布局 / 部署方案 / 服务重建
+        // 等既有重载路径顺带刷新它。
+        com.kingzcheung.xime.shuangpin.ShuangpinHintRegistry.load(context)
         loadXimeConfig(context)
         config = config.copy(
             swipeUp = getDefaultSwipeUp(),

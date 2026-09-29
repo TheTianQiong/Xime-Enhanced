@@ -71,6 +71,7 @@ import com.kingzcheung.xime.service.ExpandedCandidatePager
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.shuangpin.LocalShuangpinKeyHint
+import com.kingzcheung.xime.shuangpin.ShuangpinHintRegistry
 import com.kingzcheung.xime.shuangpin.ShuangpinKeyHint
 import com.kingzcheung.xime.shuangpin.ShuangpinSchemes
 import com.kingzcheung.xime.sms.SmsCodePluginConfig
@@ -1007,9 +1008,16 @@ fun KeyboardView(
                         // 方案由 schema 自动检测（小鹤/自然码/微软…）；可通过「外观与交互 → 双拼提示」关闭
                         val hintContext = LocalContext.current
                         val shuangpinHintEnabled = SettingsPreferences.isShuangpinHintEnabled(hintContext)
+                        // 提示表版本：配置文件（或布局包）换了提示表时递增；
+                        // detectedScheme 在 remember 之外求值，不把它并进 key 的话
+                        // remember 会一直返回旧值，热更不生效
+                        val shuangpinHintVersion = ShuangpinHintRegistry.version
                         val detectedScheme = ShuangpinSchemes.detect(state.currentSchemaId)
                         val shuangpinKeyHint = remember(
-                            candidateState.value.inputText, state.currentSchemaId, shuangpinHintEnabled
+                            candidateState.value.inputText,
+                            state.currentSchemaId,
+                            shuangpinHintEnabled,
+                            shuangpinHintVersion,
                         ) {
                             ShuangpinKeyHint(
                                 active = shuangpinHintEnabled && detectedScheme != null,
