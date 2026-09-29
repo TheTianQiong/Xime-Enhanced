@@ -818,4 +818,34 @@ declare const __ximeMock: {
   }>;
   setQuickSend(items: XimeQuickSendItem[]): void;
   setClipboard(text: string): void;
+
+  // ---- host.ipc stub（外部语音服务桥，见 XimeIpc） ----
+  /** connect 结果：ok=false 模拟「服务不可见」，lastError 为 lastError() 的返回值。 */
+  setIpcConnect(ok: boolean, lastError?: string | null): void;
+  /** startPcmSession 返回值：>0 为 sessionId，<0 为错误码（-2/-3/-5/-100~-102）。 */
+  setIpcStartResult(value: number): void;
+  setIpcVersion(value: string): void;
+  /** 当前会话 id（startPcmSession 返回值 ≤0 时回退 1）。 */
+  ipcSessionId(): number;
+  /** 模拟服务端推送中间结果（sessionId 缺省为当前会话）。 */
+  ipcPartial(text: string, sessionId?: number): void;
+  /** 模拟服务端推送最终结果。 */
+  ipcFinal(text: string, sessionId?: number): void;
+  /** 模拟识别侧错误。 */
+  ipcError(code: number, message: string, sessionId?: number): void;
+  /** 模拟会话状态变化（0=IDLE 1=Recording 2=Processing 3=Error）。 */
+  ipcState(state: number, message?: string, sessionId?: number): void;
+  /** host.ipc.writePcm 已推送的帧记录（断言用）。 */
+  readonly ipcWritten: Array<{
+    sessionId: number;
+    bytes: Uint8Array;
+    sampleRate: number;
+    channels: number;
+  }>;
+  /** host.ipc.finishPcm 收到的 sessionId（断言用）。 */
+  readonly ipcFinished: number[];
+  /** host.ipc.cancelSession 收到的 sessionId（断言用）。 */
+  readonly ipcCancelled: number[];
+  /** host.ipc.close 调用次数（断言用）。 */
+  readonly ipcClosed: number;
 };

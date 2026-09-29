@@ -1,0 +1,46 @@
+// =============================================
+// S3 剪贴板同步插件元数据
+// =============================================
+
+{
+  // 插件唯一标识
+  "id": "com.kingzcheung.xime.plugin.s3_clipboard_sync",
+
+  // 插件名称与描述
+  "name": "S3 剪贴板同步",
+  "icon": "🪣",
+  "description": "通过 S3 兼容对象存储同步剪贴板（文本，多设备）。支持 AWS S3、Cloudflare R2、MinIO、Backblaze B2 等，签名方式为 AWS Signature V4，寻址可选路径式/虚拟主机式。",
+
+  // 插件版本（字符串）：v3 起由 Lua 改写为 TypeScript，故提升次版本
+  "version": "0.2.0",
+
+  // 插件分类：clipboard_sync 剪贴板同步（单选激活）
+  "type": "clipboard_sync",
+  "activation": "single",
+
+  // 入口脚本（TS 源码由 xipm 编译为 IIFE 单文件）
+  "entry": "main.js",
+
+  // 目标平台（缺省视为 ["android"]）
+  "platforms": ["android"],
+
+  // 宿主最低版本要求（JS 脚本插件体系自 v3.0.0 起）
+  "minHostVersion": "3.0.0",
+
+  // 能力声明
+  "capabilities": {
+    "clipboard_sync": {
+      "protocols": [
+        "s3"   // 通过 S3 兼容对象存储同步剪贴板
+      ]
+      // 未声明 attachments：仅同步文本，宿主自动降级（图片两个方向都跳过）
+    }
+  },
+
+  // 网络访问声明：服务地址（endpoint）由用户配置，域名不固定。
+  // allowCustomHosts: 接受用户填写的服务器地址域名，经配置后自动授权联网
+  "network": {
+    "hosts": [],
+    "allowCustomHosts": true
+  }
+}

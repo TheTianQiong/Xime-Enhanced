@@ -17,6 +17,11 @@
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    // 每个 .ts 均为独立模块：本配置把全部插件源码纳入同一个 program，
+    // 而 main.test.ts 各自声明了顶层 const plugin / 同名辅助函数——不隔离就会
+    // 互相报「Cannot redeclare」「Duplicate function implementation」。
+    // .d.ts 不受影响（SDK 类型仍是全局声明）。
+    "moduleDetection": "force",
     "types": []
   },
   "include": [
