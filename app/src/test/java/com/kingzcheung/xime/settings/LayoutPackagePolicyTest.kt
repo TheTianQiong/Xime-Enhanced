@@ -1,5 +1,6 @@
 package com.kingzcheung.xime.settings
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,6 +60,45 @@ class LayoutPackagePolicyTest {
     fun `纯主题字体包与空包视为无意义`() {
         assertFalse(LayoutPackagePolicy.isMeaningfulPackage(emptyList()))
         assertFalse(LayoutPackagePolicy.isMeaningfulPackage(listOf("themes/bg.png", "fonts/a.ttf")))
+    }
+
+    @Test
+    fun `切换布局时算出未复用的残留文件`() {
+        assertEquals(
+            listOf("themes/old.png"),
+            LayoutPackagePolicy.staleEntries(
+                previous = listOf("xime.custom.yaml", "themes/old.png"),
+                current = listOf("xime.custom.yaml", "shuangpin_hints.custom.yaml"),
+            ),
+        )
+        // 从带提示表的布局切到不带提示表的布局：旧提示表必须被清掉
+        assertEquals(
+            listOf("shuangpin_hints.custom.yaml"),
+            LayoutPackagePolicy.staleEntries(
+                previous = listOf("xime.custom.yaml", "shuangpin_hints.custom.yaml"),
+                current = listOf("xime.custom.yaml"),
+            ),
+        )
+    }
+
+    @Test
+    fun `残留计算不误伤与去重`() {
+        assertEquals(
+            emptyList<String>(),
+            LayoutPackagePolicy.staleEntries(emptyList(), listOf("xime.custom.yaml")),
+        )
+        assertEquals(
+            emptyList<String>(),
+            LayoutPackagePolicy.staleEntries(listOf("xime.custom.yaml"), listOf("xime.custom.yaml")),
+        )
+        // 清单里出现重复项时只报一次
+        assertEquals(
+            listOf("fonts/a.ttf"),
+            LayoutPackagePolicy.staleEntries(
+                previous = listOf("fonts/a.ttf", "fonts/a.ttf", "xime.custom.yaml"),
+                current = listOf("xime.custom.yaml"),
+            ),
+        )
     }
 
     @Test

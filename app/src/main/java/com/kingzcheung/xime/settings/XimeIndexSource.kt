@@ -442,17 +442,22 @@ object XimeIndexSource {
      * 若无条件兜底，纯提示包（只带 shuangpin_hints.custom.yaml）恢复默认会连用户自己的
      * 键面布局一起删掉。
      */
-    suspend fun resetLayout(context: Context, files: List<String>): Boolean =
+    suspend fun resetLayout(context: Context, files: List<String>): Boolean {
+        val targets = if (files.isEmpty()) listOf(LayoutPackagePolicy.XIME_CUSTOM) else files
+        return removeLayoutFiles(context, targets)
+    }
+
+    /**
+     * 删除布局释放的文件（无「空清单」特殊语义，供切换布局清理残留使用）。
+     * 逐条做 canonical 越界校验，越界或不存在都跳过。
+     */
+    suspend fun removeLayoutFiles(context: Context, files: List<String>): Boolean =
         withContext(Dispatchers.IO) {
+            if (files.isEmpty()) return@withContext true
             val rimeDir = File(context.filesDir, "rime")
             val rimeCanonical = rimeDir.canonicalFile
             var ok = true
-            val targets = if (files.isEmpty()) {
-                listOf(LayoutPackagePolicy.XIME_CUSTOM)
-            } else {
-                files.distinct()
-            }
-            for (rel in targets) {
+            for (rel in files.distinct()) {
                 val target = File(rimeDir, rel).canonicalFile
                 val within = target.path.startsWith(rimeCanonical.path + File.separator)
                 if (within && target.exists() && !target.delete()) ok = false

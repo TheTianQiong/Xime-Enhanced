@@ -132,6 +132,8 @@ class LayoutMarketViewModel(application: Application) : AndroidViewModel(applica
             ?: layout.resolvedVersion()?.version.orEmpty()
         viewModelScope.launch {
             _uiState.update { it.copy(installingId = layout.id, installProgress = 0f) }
+            // 上一次布局释放的文件：本次未复用的要在安装成功后清掉，否则旧配置会继续生效
+            val previousFiles = SettingsPreferences.getAppliedLayoutFiles(context)
             val result = XimeIndexSource.installLayout(
                 context = context,
                 layout = layout,
@@ -143,6 +145,13 @@ class LayoutMarketViewModel(application: Application) : AndroidViewModel(applica
                 },
             )
             if (result.success) {
+                // 清理上一次布局的残留（本次未复用的文件），再记录新的清单。
+                // 必须在 reloadKeyboardConfig 之前——否则键盘会先按「新旧混合」的配置重载一次
+                val stale = com.kingzcheung.xime.settings.LayoutPackagePolicy
+                    .staleEntries(previousFiles, result.files)
+                if (stale.isNotEmpty()) {
+                    withContext(Dispatchers.IO) { XimeIndexSource.removeLayoutFiles(context, stale) }
+                }
                 SettingsPreferences.setAppliedLayout(context, layout.id, targetVersion, result.files)
                 reloadKeyboardConfig()
                 _uiState.update { state ->

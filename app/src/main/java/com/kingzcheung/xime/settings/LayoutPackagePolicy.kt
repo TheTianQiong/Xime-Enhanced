@@ -57,4 +57,20 @@ object LayoutPackagePolicy {
      * 视为无效包拒绝，避免「装了个寂寞」。
      */
     fun isMeaningfulPackage(written: List<String>): Boolean = written.any { isConfigPatch(it) }
+
+    /**
+     * 上一次布局释放、而本次布局不再提供的文件。
+     *
+     * 切换布局时必须清掉这些残留：应用新布局只覆盖它自己带的文件，
+     * 旧布局留下的配置会继续生效（典型：从带双拼提示表的布局切到不带提示表的布局，
+     * 旧提示表仍然占着，用户会发现「换了布局但提示还是老的」）。
+     *
+     * @param previous 上一次应用时记录的文件清单
+     * @param current  本次布局实际释放的文件清单
+     */
+    fun staleEntries(previous: List<String>, current: List<String>): List<String> {
+        if (previous.isEmpty()) return emptyList()
+        val kept = current.toSet()
+        return previous.distinct().filter { it !in kept }
+    }
 }
