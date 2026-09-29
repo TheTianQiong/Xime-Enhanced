@@ -262,25 +262,21 @@ object ShuangpinSchemes {
         schemaKeys = listOf("jiajia"),
     )
 
-    val all: List<ShuangpinScheme> = listOf(FLYPY, TONGYONG, ZIRANMA, ZIGUANG, MSPY, ABC, SOGOU, JIAJIA)
+    /**
+     * 内置方案表：`shuangpin_hints.custom.yaml` 缺失或非法时的兜底基线；
+     * 顺序即检测优先级（`double_pinyin` 依赖精确匹配，位置不可随意调整）。
+     */
+    val builtIn: List<ShuangpinScheme> = listOf(FLYPY, TONGYONG, ZIRANMA, ZIGUANG, MSPY, ABC, SOGOU, JIAJIA)
 
-    /** 根据 Rime schema_id 检测双拼方案；非双拼返回 null。 */
-    fun detect(schemaId: String): ShuangpinScheme? {
-        if (schemaId.isEmpty()) return null
-        val id = schemaId.lowercase()
-        // 通用双拼 schema 名为 double_pinyin，需精确匹配（它是其它方案的子串）
-        for (scheme in all) {
-            for (key in scheme.schemaKeys) {
-                val k = key.lowercase()
-                if (k == "double_pinyin") {
-                    if (id == "double_pinyin") return scheme
-                } else if (id.contains(k)) {
-                    return scheme
-                }
-            }
-        }
-        return null
-    }
+    /** 内置方案表（历史名；实际生效表以 [ShuangpinHintRegistry.schemes] 为准）。 */
+    val all: List<ShuangpinScheme> = builtIn
+
+    /**
+     * 根据 Rime schema_id 检测双拼方案；非双拼返回 null。
+     *
+     * 走 [ShuangpinHintRegistry]：内置表叠加用户/布局包配置表后的结果。
+     */
+    fun detect(schemaId: String): ShuangpinScheme? = ShuangpinHintRegistry.detect(schemaId)
 
     /** 当前方案是否为双拼方案。 */
     fun isShuangpinSchema(schemaId: String): Boolean = detect(schemaId) != null
