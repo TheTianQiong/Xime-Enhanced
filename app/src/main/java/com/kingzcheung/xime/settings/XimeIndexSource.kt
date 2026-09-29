@@ -398,7 +398,7 @@ object XimeIndexSource {
         }
         if (extracted == null) {
             return@withContext LayoutInstallResult(
-                false, failureReason = "解压失败或包内容不合法（需根级 xime.custom.yaml）",
+                false, failureReason = "解压失败或包内容不合法（需根级 xime.custom.yaml 或 shuangpin_hints.custom.yaml）",
             )
         }
         LayoutInstallResult(success = true, files = extracted)
@@ -435,15 +435,23 @@ object XimeIndexSource {
     }
 
     /**
-     * 恢复默认：删除清单内的文件（themes/fonts/自定义配置），并兜底移除 xime.custom.yaml。
+     * 恢复默认：删除清单内的文件（themes/fonts/自定义配置）。
      * 路径越界一律跳过，避免误删 rime 目录之外的文件。
+     *
+     * 清单为空时才兜底删除 `xime.custom.yaml`——那是「旧版本没记录文件清单」的兼容路径；
+     * 若无条件兜底，纯提示包（只带 shuangpin_hints.custom.yaml）恢复默认会连用户自己的
+     * 键面布局一起删掉。
      */
     suspend fun resetLayout(context: Context, files: List<String>): Boolean =
         withContext(Dispatchers.IO) {
             val rimeDir = File(context.filesDir, "rime")
             val rimeCanonical = rimeDir.canonicalFile
             var ok = true
-            val targets = (files + "xime.custom.yaml").distinct()
+            val targets = if (files.isEmpty()) {
+                listOf(LayoutPackagePolicy.XIME_CUSTOM)
+            } else {
+                files.distinct()
+            }
             for (rel in targets) {
                 val target = File(rimeDir, rel).canonicalFile
                 val within = target.path.startsWith(rimeCanonical.path + File.separator)
@@ -495,28 +503,24 @@ object XimeIndexSource {
         DownloadOutcome(false, "下载失败：${e.message}")
     }
 
-    /** 解压布局包到 rime 用户目录：仅接受根级 xime.custom.yaml 与 themes/、fonts/ 下文件。 */
+    /** 解压布局包到 rime 用户目录：仅接受白名单条目（见 [LayoutPackagePolicy]）。 */
     private fun extractLayoutZip(context: Context, zipFile: File): List<String>? {
         val rimeDir = File(context.filesDir, "rime")
         if (!rimeDir.exists()) rimeDir.mkdirs()
         val rimeCanonical = rimeDir.canonicalFile
         val written = mutableListOf<String>()
-        var hasCustom = false
         java.util.zip.ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val name = entry.name
                 if (!entry.isDirectory && !isAppleDoubleName(name)) {
                     val rel = name.removePrefix("./").trimStart('/')
-                    val allowed = rel == "xime.custom.yaml" ||
-                        rel.startsWith("themes/") || rel.startsWith("fonts/")
-                    if (allowed) {
+                    if (LayoutPackagePolicy.isAllowedEntry(rel)) {
                         val target = File(rimeDir, rel).canonicalFile
                         if (target.path.startsWith(rimeCanonical.path + File.separator)) {
                             target.parentFile?.mkdirs()
                             target.outputStream().use { out -> zis.copyTo(out) }
                             written.add(rel)
-                            if (rel == "xime.custom.yaml") hasCustom = true
                         } else {
                             Log.w(TAG, "skip zip-slip layout entry: $name")
                         }
@@ -526,7 +530,8 @@ object XimeIndexSource {
                 entry = zis.nextEntry
             }
         }
-        return if (hasCustom) written else null
+        // 至少要落一份配置补丁：只带主题/字体（或只有被白名单丢弃的文件）的包装了也不改变行为
+        return if (LayoutPackagePolicy.isMeaningfulPackage(written)) written else null
     }
 
     private fun isAppleDoubleName(name: String): Boolean =
