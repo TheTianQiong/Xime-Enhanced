@@ -175,6 +175,34 @@ fun SettingsScreen(
             LayoutDisplaySettingsContent(
                 onBack = { navController.popBackStack() },
                 onNavigateToChineseSymbol = { navController.navigate(SettingsRoutes.ChineseSymbol) },
+                onNavigateToLayoutPlugins = { navController.navigate(SettingsRoutes.LayoutPlugins) },
+            )
+        }
+        composable(SettingsRoutes.LayoutPlugins) {
+            LayoutPluginsContent(
+                onBack = { navController.popBackStack() },
+                onNavigateToMarket = { navController.navigate(SettingsRoutes.MarketLayouts) },
+            )
+        }
+        // 直达市场「布局」页签：与 SettingsRoutes.Market 同一内容，只是初始选中页不同
+        composable(SettingsRoutes.MarketLayouts) {
+            MarketHubContent(
+                onBack = { navController.popBackStack() },
+                onNavigateToDetail = { schemeId ->
+                    navController.navigate("schema_market_detail/$schemeId")
+                },
+                onNavigateToModelDetail = { modelId ->
+                    navController.navigate("model_market_detail/$modelId")
+                },
+                onNavigateToPluginDetail = { pluginId ->
+                    navController.navigate("plugin_market_detail/$pluginId")
+                },
+                onNavigateToLayoutDetail = { layoutId ->
+                    navController.navigate("layout_market_detail/$layoutId")
+                },
+                onNavigateToLocal = { navController.navigate(SettingsRoutes.SchemaLocal) },
+                onNavigateToModelLocal = { navController.navigate(SettingsRoutes.ModelLocal) },
+                initialTab = 3,
             )
         }
         composable(SettingsRoutes.ChineseSymbol) {

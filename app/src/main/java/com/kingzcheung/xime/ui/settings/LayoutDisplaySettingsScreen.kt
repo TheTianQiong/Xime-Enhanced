@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.twotone.Straighten
 import androidx.compose.material.icons.twotone.TextFields
+import androidx.compose.material.icons.twotone.ViewModule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import com.kingzcheung.xime.settings.SettingsPreferences
 fun LayoutDisplaySettingsContent(
     onBack: () -> Unit,
     onNavigateToChineseSymbol: () -> Unit = {},
+    onNavigateToLayoutPlugins: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -124,6 +126,19 @@ fun LayoutDisplaySettingsContent(
                             }
                         )
                     }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 16.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    SettingsItem(
+                        icon = Icons.TwoTone.ViewModule,
+                        title = "布局插件",
+                        subtitle = "管理已安装的键盘布局，快捷切换或恢复默认",
+                        onClick = onNavigateToLayoutPlugins,
+                        showArrow = true,
+                    )
                 })
             }
 

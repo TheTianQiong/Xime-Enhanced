@@ -15,6 +15,12 @@ object SettingsRoutes {
     const val Theme = "theme"
     const val KeyEffect = "key_effect"
     const val LayoutDisplay = "layout_display"
+
+    /** 布局插件管理页（布局与显示 → 布局插件）。 */
+    const val LayoutPlugins = "layout_plugins"
+
+    /** 直达市场「布局」页签（布局插件页的「浏览布局市场」入口）。 */
+    const val MarketLayouts = "market_layouts"
     const val ChineseSymbol = "chinese_symbol"
     const val Dictionary = "dictionary"
     const val Plugins = "plugins"
