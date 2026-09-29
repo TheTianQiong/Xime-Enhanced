@@ -122,6 +122,23 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # 内置插件从 TS 源码编译（xipm CLI，Rust）：assembleRelease 触发的
+      # packageBundledPlugins 与随后的 scripts/build-plugins.sh 都依赖它，
+      # 因此必须显式安装 Rust（不依赖 runner 镜像预装的版本）。
+      - name: Set up Rust (xime-plugin CLI)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/xime-plugin/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('tools/xime-plugin/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
       - name: Build Nightly APKs (Unsigned)
         run: |
           DATE=$(date +'%Y%m%d')
