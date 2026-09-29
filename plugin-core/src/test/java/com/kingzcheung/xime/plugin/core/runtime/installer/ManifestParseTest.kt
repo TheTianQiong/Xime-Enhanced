@@ -448,4 +448,19 @@ class ManifestParseTest {
             )
         }
     }
+
+    /**
+     * 守护「插件 manifest 的权限声明 → 宿主『管理权限』页标注」这条链路：
+     * 内置短信插件必须声明 RECEIVE_SMS，否则权限页会失去该权限的插件归属
+     * （不报错，只是静默不再标注），因此由测试盯住。
+     */
+    @Test
+    fun `内置短信插件声明 RECEIVE_SMS 权限`() {
+        val manifest = java.io.File("../plugins/sms-code/manifest.json")
+        assertTrue("内置 sms-code 插件应存在: ${manifest.absolutePath}", manifest.isFile)
+
+        val result = InstallerManager.parseManifestContent(manifest.readText())
+        val config = (result as PluginParseResult.Success).config
+        assertEquals(listOf("RECEIVE_SMS"), config.permissions)
+    }
 }
