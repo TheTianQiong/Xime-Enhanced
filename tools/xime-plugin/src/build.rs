@@ -22,22 +22,40 @@ pub struct BuildOutcome {
 /// 插件源码入口（TS）。
 const SOURCE_ENTRY: &str = "main.ts";
 
+/// 规范化为绝对路径，并剥掉 Windows 的 `\\?\` 逐字前缀。
+///
+/// `std::fs::canonicalize` 在 Windows 上返回逐字路径（`\\?\C:\...`）。rolldown 解析入口时
+/// 按字符串拼接规范化（`cwd.join(entry).normalize()`），逐字前缀会让入口解析失败并报
+/// `UNRESOLVED_ENTRY: Cannot resolve entry module main.ts`，因此这里统一剥离。
+fn absolute_path(path: &Path) -> std::io::Result<PathBuf> {
+    let canonical = path.canonicalize()?;
+    #[cfg(windows)]
+    {
+        let text = canonical.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            // 仅剥离盘符式逐字路径（`\\?\C:\...`）；UNC（`\\?\UNC\...`）保持原样
+            if rest.as_bytes().get(1) == Some(&b':') {
+                return Ok(PathBuf::from(rest));
+            }
+        }
+    }
+    Ok(canonical)
+}
+
 /// 插件测试入口（TS）：仅测试用，不进 xipk 产物。
 pub const TEST_ENTRY: &str = "main.test.ts";
 
 /// 构建单个插件：`<plugin_dir>/main.ts` → `<out_root>/<plugin_name>/main.js`，
 /// 并复制 manifest.json 与 resources/（xipk 打包与测试加载均基于该产物目录）。
 pub async fn build_plugin(plugin_dir: &Path, out_root: &Path, minify: bool) -> anyhow::Result<BuildOutcome> {
-    let plugin_dir = plugin_dir
-        .canonicalize()
+    let plugin_dir = absolute_path(plugin_dir)
         .map_err(|e| anyhow::anyhow!("插件目录不存在: {} ({e})", plugin_dir.display()))?;
 
     // 输出根目录规范化为绝对路径：rolldown 的 dir 相对 cwd（插件目录）解释，
     // 相对路径会落到插件目录内（plugins/<name>/build/...），必须绝对化。
     std::fs::create_dir_all(out_root)
         .map_err(|e| anyhow::anyhow!("创建输出目录失败 {}: {e}", out_root.display()))?;
-    let out_root = out_root
-        .canonicalize()
+    let out_root = absolute_path(&out_root)
         .map_err(|e| anyhow::anyhow!("规范化输出目录失败 {}: {e}", out_root.display()))?;
 
     let manifest = Manifest::load(&plugin_dir).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -121,8 +139,7 @@ async fn bundle_ts(plugin_dir: &Path, out_dir: &Path, minify: bool) -> anyhow::R
 /// 全局 test/assert 由测试环境注入，源码无需 import/export）。
 pub async fn bundle_test_js(plugin_dir: &Path, out_dir: &Path) -> anyhow::Result<PathBuf> {
     // rolldown 的 cwd/input 需可解析路径：与 build_plugin 一致先规范化
-    let plugin_dir = plugin_dir
-        .canonicalize()
+    let plugin_dir = absolute_path(plugin_dir)
         .map_err(|e| anyhow::anyhow!("插件目录不存在: {} ({e})", plugin_dir.display()))?;
     let entry = plugin_dir.join(TEST_ENTRY);
     if !entry.is_file() {
