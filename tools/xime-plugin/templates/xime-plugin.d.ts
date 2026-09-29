@@ -597,6 +597,65 @@ interface XimeClipboard {
   get(): string | null;
 }
 
+/** `host.ipc` 会话事件回调（对应外部语音服务 AIDL 回调接口；全部可选）。 */
+interface XimeIpcCallbacks {
+  /** 会话状态变化（0=IDLE 1=Recording 2=Processing 3=Error）。 */
+  onState?(sessionId: number, state: number, message: string): void;
+  /** 实时中间结果。 */
+  onPartial?(sessionId: number, text: string): void;
+  /** 最终结果。 */
+  onFinal?(sessionId: number, text: string): void;
+  /** 识别侧错误（`code` 为服务返回的错误码）。 */
+  onError?(sessionId: number, code: number, message: string): void;
+  /** 音量振幅（供波形动画，可忽略）。 */
+  onAmplitude?(sessionId: number, amplitude: number): void;
+}
+
+/**
+ * 通用 AIDL/Binder 桥（`host.ipc`）：绑定外部语音服务、推送 PCM、会话控制。
+ *
+ * 宿主只提供协议无关的原语，**不含业务逻辑**；绑定目标由宿主固定
+ * （说点啥/asr-keyboard 的 ExternalSpeechService），插件无法指定任意组件名。
+ *
+ * 会话语义为 bibi 的 push-PCM 模式：宿主负责录音，PCM 由 [writePcm] 推送，
+ * 识别结果经 [connect] 注册的回调回传。
+ *
+ * SDK 版本：宿主未集成该桥时 `host.ipc` 不存在，用 `host.has('ipc')` 探测后再用。
+ */
+interface XimeIpc {
+  /**
+   * 绑定外部语音服务并注册事件回调（异步发起；返回是否成功发起绑定，
+   * `false` 时用 [lastError] 读取原因）。
+   */
+  connect(callbacks: XimeIpcCallbacks): boolean;
+  /**
+   * 启动推送 PCM 会话（阻塞等待绑定完成，宿主侧超时约 5s）。
+   *
+   * @returns 成功为服务端生成的 sessionId（`>0`）；否则为错误码：
+   *   `-2` 系统忙碌、`-3` 服务未开启外部联动、`-5` 当前供应商不支持推送 PCM、
+   *   `-100` 未检测到外部服务、`-101` 绑定超时、`-102` 服务未连接
+   */
+  startPcmSession(): number;
+  /** 推送一帧 PCM（建议 PCM16LE / 16000Hz / mono）。 */
+  writePcm(sessionId: number, pcm: Uint8Array, sampleRate: number, channels: number): void;
+  /** 结束音频输入并进入处理阶段，等待最终结果（结果经 onFinal 回传）。 */
+  finishPcm(sessionId: number): void;
+  /** 取消并清理会话。 */
+  cancelSession(sessionId: number): void;
+  /** 指定会话是否正在录音/输入中。 */
+  isRecording(sessionId: number): boolean;
+  /** 是否存在任意活动会话。 */
+  isAnyRecording(): boolean;
+  /** 外部服务版本名（如 "1.6.0"）；不可用时为 null。 */
+  getVersion(): string | null;
+  /** 绑定状态：0=IDLE 1=CONNECTING 2=BOUND 3=CLOSED。 */
+  getState(): number;
+  /** 最近一次拒绝/失败原因；无错误时为 null。 */
+  lastError(): string | null;
+  /** 解绑服务并清理资源（插件卸载时调用，幂等）。 */
+  close(): void;
+}
+
 /** 可按 manifest 声明注入的 host 子能力（host.has / host.capabilities 用）。 */
 type XimeCapability =
   | 'config'
@@ -609,7 +668,8 @@ type XimeCapability =
   | 'ws'
   | 'asr'
   | 'quickSend'
-  | 'clipboard';
+  | 'clipboard'
+  | 'ipc';
 
 /**
  * 宿主注入的全局白名单 API（唯一能触及宿主的入口）。
@@ -643,6 +703,8 @@ interface XimeHost {
   readonly quickSend: XimeQuickSend;
   /** manifest capabilities.clipboard_read */
   readonly clipboard: XimeClipboard;
+  /** 通用 AIDL/Binder 桥（外部语音服务联动；宿主未集成时不存在） */
+  readonly ipc: XimeIpc;
   /** 生成唯一 id（ASR task_id 等） */
   uuid(): string;
 }

@@ -142,6 +142,16 @@ var __mock = {
   asrEvents: [],                      // {type, text|message|state}
   quickSendItems: [],
   clipboard: null,
+  ipcCallbacks: null,                 // host.ipc.connect 注册的回调对象
+  ipcConnected: true,                 // connect 是否成功发起绑定
+  ipcLastError: null,                 // host.ipc.lastError()
+  ipcStartResult: 1,                  // startPcmSession 返回值（>0=sessionId；<0=错误码）
+  ipcState: 0,                        // getState()：0=IDLE 1=CONNECTING 2=BOUND 3=CLOSED
+  ipcVersion: '1.6.0',                // getVersion()
+  ipcWritten: [],                     // writePcm 记录 {sessionId, bytes, sampleRate, channels}
+  ipcFinished: [],                    // finishPcm 收到的 sessionId
+  ipcCancelled: [],                   // cancelSession 收到的 sessionId
+  ipcClosed: 0,                       // close() 调用次数
 };
 
 // 测试可写入口：globalThis.__ximeMock
@@ -185,6 +195,47 @@ globalThis.__ximeMock = {
   asrEvents: __mock.asrEvents,
   setQuickSend: function (items) { __mock.quickSendItems = items; },
   setClipboard: function (text) { __mock.clipboard = text; },
+
+  // ---- host.ipc stub（外部语音服务桥） ----
+  //  connect 结果：ok=false 时模拟「未检测到服务/服务不可见」，lastError 给出原因
+  setIpcConnect: function (ok, lastError) {
+    __mock.ipcConnected = !!ok;
+    __mock.ipcLastError = lastError || null;
+  },
+  //  startPcmSession 返回值：>0 为 sessionId，<0 为错误码（-2/-3/-5/-100~-102）
+  setIpcStartResult: function (value) { __mock.ipcStartResult = Number(value); },
+  setIpcVersion: function (value) { __mock.ipcVersion = String(value); },
+  //  模拟服务端主动推送（sessionId 缺省为 startPcmSession 的返回值）
+  ipcSessionId: function () { return __mock.ipcStartResult > 0 ? __mock.ipcStartResult : 1; },
+  ipcPartial: function (text, sessionId) {
+    var cb = __mock.ipcCallbacks;
+    if (cb && typeof cb.onPartial === 'function') {
+      cb.onPartial(sessionId === undefined ? __ximeMock.ipcSessionId() : sessionId, String(text));
+    }
+  },
+  ipcFinal: function (text, sessionId) {
+    var cb = __mock.ipcCallbacks;
+    if (cb && typeof cb.onFinal === 'function') {
+      cb.onFinal(sessionId === undefined ? __ximeMock.ipcSessionId() : sessionId, String(text));
+    }
+  },
+  ipcError: function (code, message, sessionId) {
+    var cb = __mock.ipcCallbacks;
+    if (cb && typeof cb.onError === 'function') {
+      cb.onError(sessionId === undefined ? __ximeMock.ipcSessionId() : sessionId, Number(code), String(message));
+    }
+  },
+  ipcState: function (state, message, sessionId) {
+    var cb = __mock.ipcCallbacks;
+    if (cb && typeof cb.onState === 'function') {
+      cb.onState(sessionId === undefined ? __ximeMock.ipcSessionId() : sessionId, Number(state), String(message || ''));
+    }
+  },
+  //  断言读侧
+  get ipcWritten() { return __mock.ipcWritten; },
+  get ipcFinished() { return __mock.ipcFinished; },
+  get ipcCancelled() { return __mock.ipcCancelled; },
+  get ipcClosed() { return __mock.ipcClosed; },
 };
 
 // ---- host 树（按 d.ts v3 契约） ----
@@ -193,7 +244,7 @@ globalThis.host = {
   has: function (cap) {
     return Object.prototype.hasOwnProperty.call(globalThis.host, cap);
   },
-  capabilities: ['config', 'resource', 'bin', 'zlib', 'crypto', 'http', 'ws', 'asr', 'quickSend', 'clipboard', 'uuid'],
+  capabilities: ['config', 'resource', 'bin', 'zlib', 'crypto', 'http', 'ws', 'asr', 'quickSend', 'clipboard', 'ipc', 'uuid'],
   log: function (m) { globalThis.__ximeNative.log('log', String(m)); },
   logError: function (m) { globalThis.__ximeNative.log('error', String(m)); },
 
@@ -382,6 +433,50 @@ globalThis.host = {
 
   clipboard: {
     get: function () { return __mock.clipboard; },
+  },
+
+  ipc: {
+    connect: function (callbacks) {
+      // 真实宿主由 bootstrap wrapper 先把回调对象存进内部槽再调用原生桥；mock 同样先存后回
+      __mock.ipcCallbacks = (callbacks && typeof callbacks === 'object') ? callbacks : null;
+      if (!__mock.ipcConnected) return false;
+      __mock.ipcState = 2;   // BOUND
+      return true;
+    },
+    startPcmSession: function () {
+      if (!__mock.ipcConnected) return -102;   // ERR_NOT_BOUND
+      if (__mock.ipcStartResult > 0) __mock.ipcState = 1;   // Recording
+      return __mock.ipcStartResult;
+    },
+    writePcm: function (sessionId, pcm, sampleRate, channels) {
+      __mock.ipcWritten.push({
+        sessionId: Number(sessionId),
+        bytes: pcm,
+        sampleRate: Number(sampleRate),
+        channels: Number(channels),
+      });
+    },
+    finishPcm: function (sessionId) {
+      __mock.ipcFinished.push(Number(sessionId));
+      __mock.ipcState = 2;   // 进入处理阶段
+    },
+    cancelSession: function (sessionId) {
+      __mock.ipcCancelled.push(Number(sessionId));
+      __mock.ipcState = 0;
+    },
+    isRecording: function (sessionId) {
+      return __mock.ipcState === 1 && __mock.ipcCancelled.indexOf(Number(sessionId)) < 0;
+    },
+    isAnyRecording: function () { return __mock.ipcState === 1; },
+    getVersion: function () { return __mock.ipcConnected ? __mock.ipcVersion : null; },
+    getState: function () { return __mock.ipcState; },
+    lastError: function () { return __mock.ipcLastError; },
+    close: function () {
+      __mock.ipcClosed += 1;
+      __mock.ipcConnected = false;
+      __mock.ipcState = 3;   // CLOSED
+      __mock.ipcCallbacks = null;
+    },
   },
 };
 

@@ -1,0 +1,39 @@
+// =============================================
+// bibi(asr-keyboard) AIDL 桥 语音插件元数据
+// =============================================
+
+{
+  // 插件唯一标识（反向域名风格）
+  "id": "com.example.xime.plugin.asrkb_bridge",
+
+  // 插件名称与描述（语音转文本服务商列表展示）
+  "name": "bibi 语音输入（AIDL）",
+  "icon": "🎤",
+  "description": "复用说点啥/asr-keyboard 的识别引擎。Xime 录音并推流 PCM，经 host.ipc 桥交给说点啥识别（需要在说点啥「设置→输入设置→外部输入法联动」中开启）",
+
+  // 插件版本（字符串）：v3 起由 Lua 改写为 TypeScript，故提升次版本
+  "version": "0.2.0",
+
+  // 插件分类：speech 语音识别（单选激活）
+  "type": "speech",
+  "activation": "single",
+
+  // 入口脚本（TS 源码由 xipm 编译为 IIFE 单文件）
+  "entry": "main.js",
+
+  // 目标平台（缺省视为 ["android"]）
+  "platforms": ["android"],
+
+  // 宿主最低版本要求（JS 脚本插件体系自 v3.0.0 起）
+  "minHostVersion": "3.0.0",
+
+  // 能力声明
+  "capabilities": {
+    "speech": {
+      "inputMode": "streaming",        // 说点啥 onPartial 支持实时结果回显
+      "supportsPartialResults": true,
+      // 识别在说点啥进程内完成，本插件自身不联网（无需 network.hosts）
+      "requiresNetwork": false
+    }
+  }
+}
