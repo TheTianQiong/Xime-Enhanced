@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "com.kingzcheung.xime.plugin.core"
-    compileSdk = 36
+    // 与 :app 保持一致：dependabot 升级后的 androidx/compose 依赖要求 compileSdk ≥37
+    // （AGP 的 AAR 元数据检查会拒绝低于依赖要求的 compileSdk）
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 28
