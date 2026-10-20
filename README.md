@@ -1,3 +1,4 @@
+# 本人因为平时太忙了，本来是更新到了新的大版本，但是经过测试后发现存在一些漏洞，且没空去更新，所以项目暂时搁置。请谅解！
 # 本项目为Xime加强版，属于非官方的项目，添加了一些官方版本不包含的功能。如介意，请移步官方项目[ximeiorg/Xime](https://github.com/ximeiorg/Xime)！
 # This project is an enhanced version of Xime and is an unofficial project. It adds some features not included in the official version. If you mind, please go to the official project [ximeiorg/Xime](https://github.com/ximeiorg/Xime)!
 <p align="center">
